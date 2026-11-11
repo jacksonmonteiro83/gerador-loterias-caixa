@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Ambientes virtuais
+.venv/
+venv/
+env/
+ENV/
+
+# Testes e cobertura
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+
+# Banco de dados e dados locais
+data/*.db
+data/*.db-journal
+data/*.sqlite
+data/cache/*
+!data/cache/.gitkeep
+!data/.gitkeep
+
+# Logs
+*.log
+logs/
+
+# Editores / SO
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Metadados locais do agente OpenBot
+.agents/
+.claude/
+
+# Segredos e config local
+.env
+.env.*
+*.pem
+*.key
+
+# Jupyter
+.ipynb_checkpoints/
