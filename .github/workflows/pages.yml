@@ -3,9 +3,6 @@ name: Publicar dashboard
 on:
   push:
     branches: [main]
-    paths:
-      - "dashboard/**"
-      - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 permissions:
