@@ -231,6 +231,55 @@ def acao_atualizar(caminho: Path, offline: bool) -> int:
     return 0
 
 
+def acao_score(args: argparse.Namespace) -> int:
+    """Tabela de score dos últimos concursos (modelo adaptativo)."""
+    key = args.loteria
+    if not key:
+        print("erro: --score exige --loteria (ex.: --loteria timemania)")
+        return 2
+    classe = get_loteria(key)
+    df, fonte = historico_de(key, args.db, args.offline)
+    if df is None or df.empty:
+        print(f"erro: sem histórico para {key}")
+        return 1
+    inst = classe(config=LotteryConfig(seed=args.seed), historico=df)
+    qtd = len(df["dezenas"].iloc[-1])
+    perfil = inst.perfil_score_para(qtd)
+    registros = df.tail(max(2, args.ultimos)).reset_index(drop=True)
+
+    print("=" * 118)
+    print(f"SCORE {classe.spec.nome.upper()} · {fonte} · {len(df)} concursos")
+    print(
+        f"limiar={perfil.limiar}/{perfil.maximo} pts · "
+        f"aderência histórica={perfil.aderencia}% · amostra={perfil.amostra}"
+    )
+    print("=" * 118)
+    cabecalho = (
+        f"{'CONC':>6} {'DATA':>10} {'DEZENAS':<30} {'PADRÃO':<14} "
+        f"{'SOMA':>5} {'P/I':>5} {'PRI':>3} {'QUA':>3} {'REP':>3} {'SCORE':>5}  STATUS"
+    )
+    print(cabecalho)
+    print("-" * 118)
+    for indice in range(1, len(registros)):
+        anterior = [int(d) for d in registros.loc[indice - 1, "dezenas"]]
+        atual = [int(d) for d in registros.loc[indice, "dezenas"]]
+        resultado = perfil.avaliar(atual, anterior)
+        m = resultado["metricas"]
+        dezenas = " ".join(f"{d:02d}" for d in atual)
+        if len(dezenas) > 30:
+            dezenas = dezenas[:27] + "..."
+        print(
+            f"{int(registros.loc[indice, 'concurso']):>6} "
+            f"{str(registros.loc[indice, 'data']):>10} {dezenas:<30} "
+            f"{m['padrao_linhas']:<14} {m['soma']:>5} "
+            f"{m['pares']}/{qtd - m['pares']:<3} {m['primos']:>3} "
+            f"{m['quadrantes']:>3} {m['repeticao']:>3} "
+            f"{resultado['score']:>5}  {resultado['status']}"
+        )
+    print("-" * 118)
+    return 0
+
+
 def acao_demo(args: argparse.Namespace) -> int:
     chaves = [args.loteria] if args.loteria else [i["key"] for i in listar_loterias()]
     filtros = filtros_do_cli(args)
@@ -272,6 +321,17 @@ def acao_demo(args: argparse.Namespace) -> int:
 
         try:
             loteria = criar(key, config=config, historico=historico)
+            if args.score_min is not None:
+                loteria.config.score_minimo = int(args.score_min)
+            elif not args.sem_score and not (
+                config.dezenas_fixas
+                or config.dezenas_excluidas
+                or config.repetidas_concurso_anterior is not None
+                or config.contaminacao_maxima is not None
+            ):
+                # Score automático só sem restrições de histórico, que já
+                # estreitam bastante o universo de candidatos.
+                loteria.config.score_minimo = int(loteria.perfil_score.limiar)
             jogos = loteria.gerar()
         except (ValidacaoError, RuntimeError) as exc:
             falar(f"  FALHA: {exc}")
@@ -283,6 +343,7 @@ def acao_demo(args: argparse.Namespace) -> int:
         largura = min(74, max((len(formatar(j, posicional)) for j in jogos), default=10))
         for jogo in jogos:
             analise = loteria.analisar(jogo)
+            score = loteria.pontuar(jogo)
             texto = formatar(jogo, posicional)
             if len(texto) > largura:
                 partes = texto.split(" ")
@@ -298,7 +359,8 @@ def acao_demo(args: argparse.Namespace) -> int:
             falar(
                 f"  {texto:<{largura}}  soma={analise['soma']:>4} "
                 f"pares={analise['pares']:>2} primos={analise['primos']:>2} "
-                f"rep={analise['repetidas_ultimo']:>2}"
+                f"rep={analise['repetidas_ultimo']:>2} "
+                f"score={score['score']:>3}"
             )
         falar(f"  → {len(jogos)}/{config.qtd_jogos} jogos válidos · "
               f"{'OK' if not problemas else 'PROBLEMAS'}")
@@ -347,6 +409,9 @@ def acao_demo(args: argparse.Namespace) -> int:
                 "jogos": jogos,
                 "problemas": problemas,
                 "soma": [loteria.analisar(j)["soma"] for j in jogos],
+                "scores": [loteria.pontuar(j)["score"] for j in jogos],
+                "score_limiar": loteria.score_minimo,
+                "score_aderencia": loteria.perfil_score.aderencia,
             }
         )
         if restricoes is not None:
@@ -393,6 +458,14 @@ def montar_parser() -> argparse.ArgumentParser:
     p.add_argument("--json", action="store_true", help="imprime o resultado em JSON")
     p.add_argument("--sem-restricoes", action="store_true",
                    help="pula o cenário 2 (fixas/excluídas/repetição)")
+    p.add_argument("--score", action="store_true",
+                   help="tabela de score dos últimos concursos (exige --loteria)")
+    p.add_argument("--score-min", type=int, dest="score_min", default=None,
+                   help="score mínimo aceito na geração (padrão: limiar da modalidade)")
+    p.add_argument("--sem-score", action="store_true",
+                   help="gera sem aplicar o filtro de score")
+    p.add_argument("--ultimos", type=int, default=10,
+                   help="linhas da tabela --score (padrão: 10)")
 
     f = p.add_argument_group("filtros quantitativos (faixa min-max)")
     f.add_argument("--pares", type=_faixa)
@@ -425,6 +498,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return acao_regras()
         if args.atualizar:
             return acao_atualizar(args.db, args.offline)
+        if args.score:
+            return acao_score(args)
         return acao_demo(args)
     except KeyError as exc:
         print(f"erro: {exc}")

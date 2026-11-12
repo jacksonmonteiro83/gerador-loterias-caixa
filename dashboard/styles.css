@@ -104,6 +104,20 @@ main { max-width: 1120px; margin: 0 auto; padding: 22px 20px 40px; display: grid
 
 .grafico-heat { display: block; height: auto; }
 
+.score-kpi { display: flex; gap: 16px; flex-wrap: wrap; color: var(--sub); font-size: .78rem; }
+.score-kpi b { color: var(--texto); font-size: 1.05rem; }
+.score-lista { display: grid; gap: 6px; }
+.score-linha { display: grid; grid-template-columns: 70px 76px 1fr auto; align-items: center; gap: 10px; padding: 7px 10px; background: var(--bg-2); border: 1px solid var(--linha); border-radius: 9px; font-size: .82rem; }
+.score-concurso { color: var(--sub); font-variant-numeric: tabular-nums; }
+.score-detalhe { color: var(--sub); font-size: .78rem; }
+.score-status { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; }
+.score-status.ok { color: var(--acento); }
+.score-status.rej { color: #ff8f8f; }
+.score-badge { display: inline-block; text-align: center; border-radius: 999px; padding: 3px 9px; font-weight: 650; font-size: .76rem; font-variant-numeric: tabular-nums; }
+.score-badge.ok { background: rgba(53, 208, 127, .16); color: #7bf0b0; border: 1px solid rgba(53, 208, 127, .45); }
+.score-badge.rej { background: rgba(255, 110, 110, .12); color: #ff9d9d; border: 1px solid rgba(255, 110, 110, .35); }
+@media (max-width: 600px) { .score-linha { grid-template-columns: 64px 70px 1fr; } .score-status { display: none; } }
+
 .heat { display: grid; grid-template-columns: 34px repeat(7, 1fr); gap: 4px; font-size: .76rem; }
 .heat .cab { color: var(--sub); text-align: center; font-size: .7rem; }
 .heat .eixo { color: var(--sub); display: grid; place-items: center; }

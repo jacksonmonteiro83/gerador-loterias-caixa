@@ -19,6 +19,8 @@ RAIZ = Path(__file__).resolve().parents[1]
 if str(RAIZ) not in sys.path:
     sys.path.insert(0, str(RAIZ))
 
+from src.core import scoring  # noqa: E402
+from src.loterias.registry import get_loteria  # noqa: E402
 from src.utils import db  # noqa: E402
 
 MODALIDADES: dict[str, dict] = {
@@ -64,23 +66,43 @@ def exportar(caminho_db: str | Path | None, destino: str | Path) -> dict:
     for chave, info in MODALIDADES.items():
         df = db.carregar_df(chave, caminho=caminho_db)
         registros = []
+        perfil = None
         if df is not None and not df.empty:
-            df = df.sort_values("concurso")
+            df = df.sort_values("concurso").reset_index(drop=True)
+            spec = get_loteria(chave).spec
+            tamanho_sorteio = len(_dezenas(df.iloc[0]["dezenas"]))
+            perfil = scoring.calibrar(spec, df, qtd=tamanho_sorteio)
+            perfil_aposta = perfil
+            if spec.aposta_min != tamanho_sorteio:
+                perfil_aposta = scoring.calibrar(spec, df, qtd=spec.aposta_min)
+            anterior = None
             for _, linha in df.iterrows():
+                dezenas = _dezenas(linha["dezenas"])
+                resultado = perfil.avaliar(dezenas, anterior)
                 registros.append(
                     {
                         "n": int(linha["concurso"]),
                         "d": str(linha["data"]) if linha.get("data") is not None else None,
-                        "z": _dezenas(linha["dezenas"]),
+                        "z": dezenas,
+                        "s": resultado["score"],
+                        "a": 1 if resultado["aprovado"] else 0,
                     }
                 )
+                anterior = dezenas
         dados["loterias"][chave] = {
             "nome": info["nome"],
             "min": info["min"],
             "max": info["max"],
             "sorteadas": info["sorteadas"],
+            "aposta_min": spec.aposta_min if df is not None and not df.empty else info["sorteadas"],
             "posicional": info["posicional"],
             "nota": info.get("nota"),
+            "perfil": perfil.como_dict() if perfil is not None else None,
+            "perfil_aposta": (
+                perfil_aposta.como_dict()
+                if perfil is not None and perfil_aposta is not perfil
+                else None
+            ),
             "concursos": registros,
         }
 

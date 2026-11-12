@@ -97,6 +97,13 @@ python main.py --loteria mega-sena --jogos 5 \
   --pares 3-3 --primos 2-4 --moldura 3-5 --soma 150-250 --quadrante-min 1 \
   --fixas 10,23 --excluidas 4,13 --repetidas 2 --contaminacao 4
 
+# tabela de score dos últimos concursos
+python main.py --loteria timemania --score --ultimos 12
+
+# gerar exigindo score mínimo (ou desligar o filtro)
+python main.py --loteria mega-sena --jogos 5 --score-min 125
+python main.py --loteria mega-sena --jogos 5 --sem-score
+
 # tabela de regras oficiais / saída JSON
 python main.py --regras
 python main.py --offline --json
@@ -106,7 +113,8 @@ Opções: `--loteria`, `--jogos`, `--dezenas`, `--seed`, `--offline`, `--db`,
 `--atualizar`, `--regras`, `--json`, `--sem-restricoes`; filtros `--pares`,
 `--impares`, `--primos`, `--moldura`, `--miolo`, `--soma`, `--quadrante-min`,
 `--quadrante-max` (faixa `min-max`); histórico `--fixas`, `--excluidas`,
-`--repetidas`, `--contaminacao`.
+`--repetidas`, `--contaminacao`; score `--score`, `--ultimos`, `--score-min`,
+`--sem-score`.
 
 ### Como biblioteca
 
@@ -137,6 +145,38 @@ cfg = LotteryConfig(
 loteria = criar("mega-sena", config=cfg, historico=historico)
 for jogo in loteria.gerar():
     print(sorted(jogo), loteria.analisar(jogo)["soma"])
+```
+
+### Score adaptativo
+
+O port do modelo da Timemania virou um motor genérico: cada modalidade calibra
+suas faixas e cortes sobre o próprio histórico (percentis), em vez de usar os
+valores fixos pensados para 1–80 com 7 dezenas.
+
+- **Jogos de conjunto**: 7 critérios × 20 pts = **140 pts** — soma, pares,
+  primos, concentração por linha, cobertura de quadrantes, repetição do concurso
+  anterior e consecutivos.
+- **Super Sete (posicional)**: 5 critérios × 20 pts = **100 pts** — soma, pares,
+  primos, repetição por coluna e concentração de dígitos.
+- Antes da pontuação há **blocos rígidos** (soma fora da faixa histórica,
+  extremos, amplitude, linha concentrada, quadrantes vazios, consecutivos e
+  repetição acima do corte). Um jogo que cai em qualquer bloco recebe 0 pts.
+- A nota de corte é o **percentil 65 dos scores históricos** (aprox. 35% dos
+  concursos passam), limitada a 70–125 (conjunto) ou 45–90 (posicional).
+- Lotomania (aposta de 50 dezenas, sorteio de 20) e Timemania (aposta de 10,
+  sorteio de 7) usam um perfil por tamanho de jogo.
+- Na CLI o filtro de score é automático **apenas** quando não há restrições de
+  histórico (fixas, excluídas, repetidas ou contaminação); `--score-min` força
+  um valor e `--sem-score` desliga.
+
+O score mede aderência ao padrão histórico; **não** aumenta a probabilidade
+matemática de acerto.
+
+```python
+resultado = loteria.pontuar(jogo)
+print(resultado["score"], resultado["status"], resultado["metricas"])
+perfil = loteria.perfil_score
+print(perfil.limiar, perfil.aderencia, perfil.ideal)
 ```
 
 ### Filtros
@@ -187,8 +227,9 @@ de concurso ao descobrir o último publicado.
 
 Página estática com o último concurso de cada modalidade, frequência e atraso,
 distribuição da soma, repetição do concurso anterior, heatmap por coluna da Super
-Sete e um gerador rápido de jogos. Fica em `dashboard/` e é publicada pelo GitHub
-Actions a cada push.
+Sete, **score dos últimos resultados** (limiar e aderência calibrados por
+modalidade) e um gerador rápido que mostra o score de cada jogo. Fica em
+`dashboard/` e é publicada pelo GitHub Actions a cada push.
 
 Para atualizar os dados da página:
 
@@ -208,7 +249,8 @@ python -m pytest -q
 
 A suíte cobre validação oficial, filtros, moldura/miolo/quadrantes, geração
 determinística, histórico (repetição e contaminação), SQLite, ETL (com rede
-mockada) e uma integração de ponta a ponta da CLI — tudo sem depender de rede.
+mockada), o motor de score adaptativo e uma integração de ponta a ponta da CLI —
+tudo sem depender de rede.
 
 ---
 
@@ -248,7 +290,9 @@ Boas práticas já aplicadas: `.gitignore` exclui `data/*.db`, `.venv`, caches e
 | Core Engine (regras, filtros, histórico, geração) | concluído |
 | 8 módulos de modalidade + registry | concluído |
 | CLI `main.py` e validação de integração | concluído |
-| Suíte de testes | 217 testes verdes |
+| Score adaptativo por modalidade (calibrado no histórico) | concluído |
+| Dashboard público com score e gerador | concluído |
+| Suíte de testes | 234 testes verdes |
 
 Próximos passos sugeridos: backtest de filtros sobre o histórico, exportação
 CSV/PDF de volantes e uma interface web simples.

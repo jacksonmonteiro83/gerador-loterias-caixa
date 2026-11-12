@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Loterias Caixa — Dashboard</title>
 <meta name="description" content="Estatísticas públicas das oito modalidades das Loterias Caixa: frequência, atraso, soma, repetição e gerador de jogos.">
-<link rel="stylesheet" href="styles.css?v=20261112">
+<link rel="stylesheet" href="styles.css?v=20261112b">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎲</text></svg>">
 </head>
 <body>
@@ -35,6 +35,15 @@
   <p class="legenda nota-loteria" id="nota-loteria"></p>
 
   <section class="grid-stats" id="stats"></section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Score dos últimos resultados</h2>
+      <div class="score-kpi" id="score-kpi">—</div>
+    </div>
+    <p class="legenda" id="legenda-score"></p>
+    <div class="score-lista" id="score-lista"></div>
+  </section>
 
   <section class="card">
     <div class="card-head">
@@ -70,6 +79,7 @@
         <button id="gerar" class="btn">Gerar</button>
       </div>
     </div>
+    <p class="legenda">Cada jogo usa o tamanho mínimo de aposta da modalidade e mostra o score do modelo; verde = aprovado no limiar.</p>
     <div id="jogos" class="jogos"></div>
     <p class="legenda aviso">Nenhum filtro aumenta a chance matemática de acerto. Todos os jogos válidos têm a mesma probabilidade. Proibido para menores de 18 anos.</p>
   </section>
@@ -80,6 +90,6 @@
   <p class="fino">Ferramenta estatística e educacional, sem vínculo com a Caixa Econômica Federal.</p>
 </footer>
 
-<script src="app.js?v=20261112"></script>
+<script src="app.js?v=20261112b"></script>
 </body>
 </html>

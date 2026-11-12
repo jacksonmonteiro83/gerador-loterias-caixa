@@ -15,7 +15,7 @@ from typing import Any, ClassVar, Sequence
 
 import pandas as pd
 
-from . import filters, stats
+from . import filters, scoring, stats
 from .models import FiltroConfig, LotteryConfig, LotterySpec, ValidacaoError
 
 __all__ = ["LotteryBase"]
@@ -51,6 +51,8 @@ class LotteryBase(ABC):
             self._ultimo_lista = [
                 int(d) for d in self.historico["dezenas"].iloc[-1]
             ]
+        self._perfil_score: scoring.PerfilScore | None = None
+        self._perfis_score: dict[int, scoring.PerfilScore] = {}
         if (
             self.config.repetidas_concurso_anterior is not None
             and self.historico.empty
@@ -263,6 +265,38 @@ class LotteryBase(ABC):
         )
         return metricas
 
+    # ------------------------------------------------------------------
+    # score adaptativo
+    # ------------------------------------------------------------------
+    @property
+    def perfil_score(self) -> scoring.PerfilScore:
+        """Modelo de score calibrado para o tamanho do jogo configurado."""
+        return self.perfil_score_para(self.qtd_efetiva)
+
+    def perfil_score_para(self, qtd: int) -> scoring.PerfilScore:
+        """Modelo calibrado para um tamanho de jogo (cache por tamanho)."""
+        qtd = int(qtd)
+        if self._perfis_score is None:
+            self._perfis_score = {}
+        if qtd not in self._perfis_score:
+            self._perfis_score[qtd] = scoring.calibrar(
+                self.spec, self.historico, qtd=qtd
+            )
+        return self._perfis_score[qtd]
+
+    @property
+    def score_minimo(self) -> int:
+        """Limiar efetivo: o da configuração ou o calibrado para a modalidade."""
+        if self.config.score_minimo is not None:
+            return int(self.config.score_minimo)
+        return int(self.perfil_score.limiar)
+
+    def pontuar(self, jogo: Sequence[int], qtd: int | None = None) -> dict:
+        """Devolve score, status e métricas do modelo para um jogo."""
+        valores = [int(d) for d in jogo]
+        perfil = self.perfil_score_para(qtd or len(valores))
+        return perfil.avaliar(valores, self._ultimo_lista or None)
+
     def _filtro_efetivo(self) -> FiltroConfig:
         filtro = self.config.filtros
         if self._permite_repeticao_estrutural():
@@ -399,6 +433,9 @@ class LotteryBase(ABC):
             return None
         if not self._checa_historico(jogo):
             return None
+        if self.config.score_minimo is not None:
+            if self.pontuar(jogo)["score"] < self.score_minimo:
+                return None
         return [int(d) for d in jogo]
 
     def _resumo_restricoes(self) -> str:

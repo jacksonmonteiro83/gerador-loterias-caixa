@@ -17,6 +17,14 @@
   };
   const media = (arr) => (arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : 0);
 
+  const ehPrimo = (n) => {
+    if (n < 2) return false;
+    for (let i = 2; i * i <= n; i++) if (n % i === 0) return false;
+    return true;
+  };
+  const PRIMOS = new Set(Array.from({ length: 99 }, (_, i) => i + 2).filter(ehPrimo));
+  const METRICA = { linhas: "max_linha", concentracao: "max_digito" };
+
   const estado = { dados: null, atual: "mega-sena", metrica: "freq" };
 
   /* ---------- carregamento ---------- */
@@ -111,6 +119,7 @@
     $("#nota-loteria").textContent = info.nota || "";
     renderHero(info, d);
     renderStats(info, d);
+    renderScore(info);
     desenharFrequencia(info, d);
     desenharSoma(info, d);
     desenharRepeticao(info, d);
@@ -270,6 +279,145 @@
     });
   }
 
+  /* ---------- score ---------- */
+
+  function quadrantesMalha(info) {
+    const linhas = Math.ceil((info.max - info.min + 1) / info.perfil.colunas);
+    const colunas = info.perfil.colunas;
+    const inicio = info.perfil.inicio;
+    const meioL = Math.ceil(linhas / 2);
+    const meioC = Math.ceil(colunas / 2);
+    const blocos = [];
+    for (const [l0, l1] of [[0, meioL], [meioL, linhas]]) {
+      for (const [c0, c1] of [[0, meioC], [meioC, colunas]]) {
+        const bloco = new Set();
+        for (let i = l0; i < l1; i++) {
+          for (let j = c0; j < c1; j++) {
+            const indice = i * colunas + j;
+            if (indice < info.max - info.min + 1) bloco.add(inicio + indice);
+          }
+        }
+        blocos.push(bloco);
+      }
+    }
+    return blocos;
+  }
+
+  function metricasJogo(info, dezenas, anterior) {
+    const valores = dezenas.map(Number);
+    const soma = valores.reduce((s, v) => s + v, 0);
+    const pares = valores.filter((v) => v % 2 === 0).length;
+    const primos = new Set(valores.filter((v) => PRIMOS.has(v))).size;
+    if (info.posicional) {
+      const contagem = new Map();
+      for (const v of valores) contagem.set(v, (contagem.get(v) || 0) + 1);
+      const repeticao = anterior ? valores.filter((v, i) => v === anterior[i]).length : 0;
+      return {
+        soma, pares, primos,
+        max_digito: Math.max(0, ...contagem.values()),
+        repeticao,
+        padrao_linhas: [...contagem.values()].sort((a, b) => b - a).join("-"),
+      };
+    }
+    const inicio = info.perfil.inicio;
+    const colunas = info.perfil.colunas;
+    const linhas = valores.map((d) => Math.floor((d - inicio) / colunas));
+    const contagem = new Map();
+    for (const linha of linhas) contagem.set(linha, (contagem.get(linha) || 0) + 1);
+    const blocos = quadrantesMalha(info);
+    const cobertos = blocos.filter((bloco) => valores.some((d) => bloco.has(d))).length;
+    const ordenado = [...valores].sort((a, b) => a - b);
+    let consecutivos = 0;
+    for (let i = 1; i < ordenado.length; i++) if (ordenado[i] === ordenado[i - 1] + 1) consecutivos++;
+    const conjuntoAnterior = new Set(anterior || []);
+    return {
+      soma, pares, primos,
+      max_linha: Math.max(0, ...contagem.values()),
+      quadrantes: cobertos,
+      consecutivos,
+      repeticao: valores.filter((d) => conjuntoAnterior.has(d)).length,
+      primeiro: ordenado[0] || 0,
+      ultimo: ordenado[ordenado.length - 1] || 0,
+      amplitude: ordenado.length ? ordenado[ordenado.length - 1] - ordenado[0] : 0,
+      padrao_linhas: [...contagem.values()].sort((a, b) => b - a).join("-"),
+    };
+  }
+
+  function pontuarJogo(info, dezenas, anterior, perfil) {
+    perfil = perfil || info.perfil;
+    if (!perfil) return null;
+    const m = metricasJogo(info, dezenas, anterior);
+    let bloqueio = null;
+    const c = perfil.corte || {};
+    if (m.soma < c.soma[0] || m.soma > c.soma[1]) bloqueio = `SOMA(${m.soma})`;
+    else if (!perfil.posicional) {
+      if (m.primeiro > c.primeiro) bloqueio = `EXTREMOS[${m.primeiro}-${m.ultimo}]`;
+      else if (m.ultimo < c.ultimo) bloqueio = `EXTREMOS[${m.primeiro}-${m.ultimo}]`;
+      else if (m.amplitude < c.amplitude) bloqueio = `AMPLITUDE(${m.amplitude})`;
+      else if (m.max_linha > c.max_linha) bloqueio = `CONCENTRACAO_LINHA(${m.max_linha})`;
+      else if (m.quadrantes < c.quadrantes) bloqueio = `QUADRANTES(${m.quadrantes})`;
+      else if (m.consecutivos > c.consecutivos) bloqueio = `CONSECUTIVOS(${m.consecutivos})`;
+      else if (m.repeticao > c.repeticao) bloqueio = `REP_ANTERIOR(${m.repeticao})`;
+    } else if (m.repeticao > c.repeticao) {
+      bloqueio = `REP_ANTERIOR(${m.repeticao})`;
+    }
+    if (bloqueio) return { score: 0, aprovado: false, status: `REJ (0pts: ${bloqueio})`, metricas: m };
+
+    let score = 0;
+    const falhas = [];
+    for (const criterio of perfil.criterios) {
+      const valor = m[METRICA[criterio] || criterio];
+      const ideal = perfil.ideal[criterio];
+      const ok = perfil.ok[criterio];
+      if (ideal && valor >= ideal[0] && valor <= ideal[1]) score += 20;
+      else if (ok && valor >= ok[0] && valor <= ok[1]) score += 10;
+      else if (!perfil.posicional && criterio !== "pares" && criterio !== "primos") score += 5;
+      else falhas.push(`${criterio.toUpperCase()}(${valor})`);
+    }
+    const aprovado = score >= perfil.limiar;
+    return {
+      score, aprovado,
+      status: aprovado ? `APROV (${score}pts)` : `REJ (${score}pts: ${falhas.join("/") || "FORA_DAS_FAIXAS"})`,
+      metricas: m,
+    };
+  }
+
+  function renderScore(info) {
+    const perfil = info.perfil;
+    const rotulo = $("#legenda-score");
+    const kpi = $("#score-kpi");
+    const lista = $("#score-lista");
+    lista.innerHTML = "";
+    kpi.innerHTML = "";
+    if (!perfil || !info.concursos.length) {
+      rotulo.textContent = "Sem modelo de score para esta modalidade.";
+      return;
+    }
+    kpi.appendChild(el("span", "", `limiar <b>${perfil.limiar}</b>/${perfil.maximo}`));
+    kpi.appendChild(el("span", "", `aderência <b>${perfil.aderencia}%</b>`));
+    rotulo.textContent =
+      `${perfil.criterios.length} critérios calibrados sobre ${perfil.amostra} concursos · ` +
+      `a nota de corte é o percentil histórico de ${perfil.limiar} pts.`;
+
+    const total = info.concursos.length;
+    const inicio = Math.max(0, total - 10);
+    for (let i = total - 1; i >= inicio; i--) {
+      const c = info.concursos[i];
+      const anterior = i > 0 ? info.concursos[i - 1].z : null;
+      const r = pontuarJogo(info, c.z, anterior) || { score: c.s, aprovado: !!c.a, metricas: null };
+      const linha = el("div", "score-linha");
+      linha.appendChild(el("span", "score-concurso", `#${fmt(c.n)}`));
+      linha.appendChild(el("span", `score-badge ${r.aprovado ? "ok" : "rej"}`, `${r.score} pts`));
+      const m = r.metricas;
+      const detalhe = m
+        ? `soma ${m.soma} · ${m.pares} par(es) · ${m.repeticao} repetida(s)`
+        : "—";
+      linha.appendChild(el("span", "score-detalhe", detalhe));
+      linha.appendChild(el("span", `score-status ${r.aprovado ? "ok" : "rej"}`, r.aprovado ? "aprovado" : "reprovado"));
+      lista.appendChild(linha);
+    }
+  }
+
   /* ---------- gerador ---------- */
 
   function sorteio(info) {
@@ -280,7 +428,7 @@
       const j = Math.floor(Math.random() * (i + 1));
       [universo[i], universo[j]] = [universo[j], universo[i]];
     }
-    return universo.slice(0, info.sorteadas).sort((a, b) => a - b);
+    return universo.slice(0, info.aposta_min || info.sorteadas).sort((a, b) => a - b);
   }
 
   function gerarJogos() {
@@ -288,6 +436,8 @@
     const quantidade = Math.min(20, Math.max(1, Number($("#qtd").value) || 1));
     const alvo = $("#jogos");
     alvo.innerHTML = "";
+    const anterior = info.concursos.length ? info.concursos[info.concursos.length - 1].z : null;
+    const perfil = info.perfil_aposta || info.perfil;
     for (let i = 0; i < quantidade; i++) {
       const dezenas = sorteio(info);
       const soma = dezenas.reduce((s, v) => s + v, 0);
@@ -295,6 +445,13 @@
       const linha = el("div", "jogo");
       linha.appendChild(bolas(dezenas, info.posicional));
       linha.appendChild(el("span", "tag", `soma ${soma} · ${pares} par(es)`));
+      const r = pontuarJogo(info, dezenas, anterior, perfil);
+      if (r) {
+        linha.appendChild(
+          el("span", `score-badge ${r.aprovado ? "ok" : "rej"}`, `${r.score} pts`)
+        );
+        linha.title = r.status;
+      }
       alvo.appendChild(linha);
     }
   }

@@ -206,6 +206,7 @@ class LotteryConfig:
     repetidas_concurso_anterior: int | None = None  # qtd EXATA a repetir
     max_repetidas: int | None = None  # teto de repetição
     contaminacao_maxima: int | None = None  # teto de sobreposição
+    score_minimo: int | None = None  # None desliga o filtro de score
     max_tentativas: int = 200_000
     seed: int | None = None
 
@@ -228,6 +229,12 @@ class LotteryConfig:
             if not _eh_int(valor) or int(valor) < 0:
                 raise ValidacaoError(f"{nome} deve ser inteiro não negativo")
             setattr(self, nome, int(valor))
+        if self.score_minimo is not None:
+            if not _eh_int(self.score_minimo) or int(self.score_minimo) < 0:
+                raise ValidacaoError("score_minimo deve ser inteiro não negativo")
+            if int(self.score_minimo) > 200:
+                raise ValidacaoError("score_minimo não pode passar de 200")
+            self.score_minimo = int(self.score_minimo)
         for nome in ("dezenas_fixas", "dezenas_excluidas"):
             valor = getattr(self, nome)
             if valor is None:
