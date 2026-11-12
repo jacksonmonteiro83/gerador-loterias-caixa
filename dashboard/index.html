@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Loterias Caixa — Dashboard</title>
+<meta name="description" content="Estatísticas públicas das oito modalidades das Loterias Caixa: frequência, atraso, soma, repetição e gerador de jogos.">
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎲</text></svg>">
+</head>
+<body>
+<header class="topo">
+  <div class="topo-inner">
+    <div>
+      <h1>Loterias Caixa <span>dashboard</span></h1>
+      <p class="sub">Estatísticas das oito modalidades, calculadas sobre o histórico baixado da Caixa.</p>
+    </div>
+    <div class="meta-topo">
+      <span id="atualizado">carregando…</span>
+      <span id="total-concursos"></span>
+    </div>
+  </div>
+  <nav id="tabs" class="tabs" aria-label="Modalidades"></nav>
+</header>
+
+<main>
+  <section class="hero card" id="hero">
+    <div class="hero-info">
+      <span class="rotulo" id="ultimo-rotulo">Último concurso</span>
+      <strong id="ultimo-numero">—</strong>
+      <span id="ultimo-data" class="sub">—</span>
+    </div>
+    <div class="bolas" id="ultimo-bolas"></div>
+  </section>
+  <p class="legenda nota-loteria" id="nota-loteria"></p>
+
+  <section class="grid-stats" id="stats"></section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Frequência e atraso</h2>
+      <div class="toggle" role="group" aria-label="Métrica">
+        <button data-metrica="freq" class="ativo">Frequência</button>
+        <button data-metrica="atraso">Atraso</button>
+      </div>
+    </div>
+    <p class="legenda" id="legenda-freq"></p>
+    <div class="grafico-freq" id="grafico-freq"></div>
+  </section>
+
+  <div class="duo">
+    <section class="card">
+      <h2>Distribuição da soma</h2>
+      <p class="legenda" id="legenda-soma"></p>
+      <div class="histograma" id="histograma-soma"></div>
+    </section>
+    <section class="card">
+      <h2>Repetição do concurso anterior</h2>
+      <p class="legenda">Quantas dezenas de um sorteio repetem no seguinte.</p>
+      <div class="barras-h" id="barras-repeticao"></div>
+    </section>
+  </div>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Gerador rápido</h2>
+      <div class="gerador-controles">
+        <label for="qtd">jogos</label>
+        <input id="qtd" type="number" min="1" max="20" value="5">
+        <button id="gerar" class="btn">Gerar</button>
+      </div>
+    </div>
+    <div id="jogos" class="jogos"></div>
+    <p class="legenda aviso">Nenhum filtro aumenta a chance matemática de acerto. Todos os jogos válidos têm a mesma probabilidade. Proibido para menores de 18 anos.</p>
+  </section>
+</main>
+
+<footer>
+  <p>Dados públicos de sorteio das Loterias Caixa · gerado em <span id="rodape-data">—</span></p>
+  <p class="fino">Ferramenta estatística e educacional, sem vínculo com a Caixa Econômica Federal.</p>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

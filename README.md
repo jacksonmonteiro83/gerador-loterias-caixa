@@ -181,6 +181,25 @@ de concurso ao descobrir o último publicado.
 
 ---
 
+## Dashboard público
+
+**https://jacksonmonteiro83.github.io/gerador-loterias-caixa/**
+
+Página estática com o último concurso de cada modalidade, frequência e atraso,
+distribuição da soma, repetição do concurso anterior, heatmap por coluna da Super
+Sete e um gerador rápido de jogos. Fica em `dashboard/` e é publicada pelo GitHub
+Actions a cada push.
+
+Para atualizar os dados da página:
+
+```bash
+python main.py --atualizar
+python scripts/export_dashboard.py
+git add dashboard/data.json && git commit -m "Atualiza dados do dashboard" && git push
+```
+
+---
+
 ## Testes
 
 ```bash

@@ -45,6 +45,7 @@ desktop.ini
 # Metadados locais do agente OpenBot
 .agents/
 .claude/
+.openbot/
 
 # Segredos e config local
 .env
