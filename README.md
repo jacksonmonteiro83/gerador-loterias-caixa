@@ -172,6 +172,13 @@ O ETL é incremental: baixa apenas concursos posteriores ao `ultimo_concurso`.
 Se a rede falhar, cai no modo `offline-sintetico`, que gera histórico de teste —
 esse modo **não** representa resultados reais.
 
+Fontes: o endpoint oficial da Caixa
+(`servicebus2.caixa.gov.br/portaldeloterias/api`) para sete modalidades e a API
+espelho `loteriascaixa-api.herokuapp.com/api` para a **Super Sete**, cujo caminho
+no serviço oficial responde 500 (não publicado). A API espelho devolve a lista
+do concurso mais novo para o mais antigo; por isso o ETL escolhe o maior número
+de concurso ao descobrir o último publicado.
+
 ---
 
 ## Testes

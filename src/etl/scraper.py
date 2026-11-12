@@ -194,16 +194,24 @@ def normalizar_resposta(payload: dict, loteria: str) -> dict | None:
 
 
 def _urls(slug: str, numero: int | None) -> list[str]:
-    """Monta os endpoints a tentar, na ordem do contrato."""
+    """Monta os endpoints a tentar, na ordem do contrato.
+
+    A Super Sete não é publicada pelo endpoint oficial da Caixa (responde
+    500 desde sempre), por isso a API espelho vem primeiro para essa
+    modalidade e evita três tentativas inúteis por concurso.
+    """
+    caixa = f"{BASE_CAIXA}/{slug}"
+    espelho = f"{BASE_FALLBACK}/{slug}"
+    if _chave_loteria(slug) == "super-sete":
+        if numero is None:
+            return [espelho, caixa]
+        return [f"{espelho}/{numero}", espelho, f"{caixa}/{numero}"]
     if numero is None:
-        return [
-            f"{BASE_CAIXA}/{slug}",
-            f"{BASE_FALLBACK}/{slug}",
-        ]
+        return [caixa, espelho]
     return [
-        f"{BASE_CAIXA}/{slug}/{numero}",
-        f"{BASE_FALLBACK}/{slug}/{numero}",
-        f"{BASE_FALLBACK}/{slug}",
+        f"{caixa}/{numero}",
+        f"{espelho}/{numero}",
+        espelho,
     ]
 
 
@@ -237,6 +245,20 @@ def _get_json(session: requests.Session, url: str) -> Any:
     return None
 
 
+def _numero_candidato(item: dict) -> int:
+    """Devolve o número do concurso de um item de lista; -1 se ilegível."""
+    try:
+        valor = _primeiro(item, "numero", "concurso", "numeroConcurso")
+    except Exception:  # pragma: no cover - defensivo
+        return -1
+    if valor is None:
+        return -1
+    try:
+        return _para_int(valor)
+    except (TypeError, ValueError):
+        return -1
+
+
 def _extrair_registro(payload: Any, slug: str, numero: int | None) -> dict | None:
     """Seleciona o concurso desejado em payloads de objeto ou de lista."""
     chave = _chave_loteria(slug)
@@ -255,7 +277,9 @@ def _extrair_registro(payload: Any, slug: str, numero: int | None) -> dict | Non
     if not candidatos:
         return None
     if numero is None:
-        return normalizar_resposta(candidatos[-1], chave)
+        # A API espelho devolve a lista do mais novo para o mais antigo, então
+        # "último" é o maior número, não o último item da lista.
+        return normalizar_resposta(max(candidatos, key=_numero_candidato), chave)
     for item in candidatos:
         try:
             valor = _primeiro(item, "numero", "concurso", "numeroConcurso")

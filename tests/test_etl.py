@@ -179,6 +179,31 @@ def test_buscar_concurso_sem_numero_usa_ultimo_da_lista():
     )
 
 
+def test_buscar_concurso_sem_numero_escolhe_o_maior_da_lista_invertida():
+    lista = [
+        {"numero": 3084, "listaDezenas": ["6", "14", "22", "30", "31", "37"]},
+        {"numero": 3083, "listaDezenas": ["1", "2", "3", "4", "5", "6"]},
+        {"numero": 2985, "listaDezenas": ["7", "8", "9", "10", "11", "12"]},
+    ]
+    sessao = SessaoFalsa([RespostaFalsa(404), RespostaFalsa(200, lista)])
+
+    registro = scraper.buscar_concurso("mega-sena", None, session=sessao)
+
+    assert registro is not None
+    assert registro["concurso"] == 3084
+
+
+def test_super_sete_usa_endpoint_espelho_primeiro():
+    sessao = SessaoFalsa([RespostaFalsa(200, PAYLOAD_SUPER_SETE)])
+
+    registro = scraper.buscar_concurso("super-sete", 700, session=sessao)
+
+    assert registro is not None
+    assert sessao.chamadas[0][0] == (
+        "https://loteriascaixa-api.herokuapp.com/api/supersete/700"
+    )
+
+
 def test_buscar_concurso_retorna_none_quando_tudo_falha():
     sessao = SessaoFalsa(
         [RespostaFalsa(404), RespostaFalsa(404), RespostaFalsa(404)]
