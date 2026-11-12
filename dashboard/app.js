@@ -147,7 +147,7 @@
       ["Soma média", n ? Math.round(media(d.somas)) : "—"],
       ["Pares por jogo", n ? media(d.pares).toFixed(1) : "—"],
       ["Dezenas", info.posicional ? `${info.sorteadas} colunas` : `${info.sorteadas} de ${info.min}–${info.max}`],
-      ["Repetição média", d.repeticoes.length ? media(d.repeticoes).toFixed(1) : "—"],
+      ["Repetição média", info.posicional ? "—" : d.repeticoes.length ? media(d.repeticoes).toFixed(1) : "—"],
     ];
     const alvo = $("#stats");
     alvo.innerHTML = "";
