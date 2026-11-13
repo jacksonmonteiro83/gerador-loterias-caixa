@@ -119,6 +119,7 @@
     $("#nota-loteria").textContent = info.nota || "";
     renderHero(info, d);
     renderStats(info, d);
+    renderPadroes(info);
     renderScore(info);
     desenharFrequencia(info, d);
     desenharSoma(info, d);
@@ -279,6 +280,49 @@
     });
   }
 
+  function renderPadroes(info) {
+    const alvo = $("#barras-padroes");
+    alvo.innerHTML = "";
+    const kpi = $("#padrao-kpi");
+    kpi.innerHTML = "";
+    const checkbox = $("#filtrar-padroes");
+    const legenda = $("#legenda-padroes");
+    if (info.posicional || !info.padroes || !info.padroes.length) {
+      $("#padrao-top").textContent = "—";
+      checkbox.disabled = true;
+      checkbox.checked = false;
+      legenda.textContent = info.posicional
+        ? "Na Super Sete cada coluna sorteia um dígito: padrão de linha não se aplica."
+        : "Sem padrões de linha calculados para esta modalidade.";
+      return;
+    }
+    checkbox.disabled = info.aposta_min !== info.sorteadas;
+    checkbox.checked = !checkbox.disabled;
+    const top = info.padroes;
+    $("#padrao-top").textContent = top[0].padrao;
+    kpi.appendChild(el("span", "", `<b>${top[0].percentual}%</b> dos concursos`));
+    kpi.appendChild(el("span", "", `top 3 cobre <b>${info.padroes_top3_cobertura}%</b>`));
+
+    const maximo = Math.max(1, ...top.map((p) => p.quantidade));
+    top.slice(0, 5).forEach((item, indice) => {
+      const linha = el("div", "linha-barra");
+      linha.appendChild(el("span", "", item.padrao));
+      const trilho = el("div", "trilho");
+      const preench = el("div", "preench");
+      preench.style.width = `${(item.quantidade / maximo) * 100}%`;
+      if (indice < 3) preench.classList.add("padrao-ok");
+      trilho.appendChild(preench);
+      linha.appendChild(trilho);
+      linha.appendChild(el("b", "", `${item.percentual}%`));
+      alvo.appendChild(linha);
+    });
+
+    const fora = top.slice(3, 6).map((p) => `${p.padrao} (${p.percentual}%)`);
+    legenda.textContent =
+      `Distribuição das ${info.sorteadas} dezenas pelas ${info.linhas} linhas de ${info.perfil.colunas} colunas.` +
+      (fora.length ? ` Excluídos do gerador com o filtro ligado: ${fora.join(" · ")}.` : "");
+  }
+
   /* ---------- score ---------- */
 
   function quadrantesMalha(info) {
@@ -410,7 +454,7 @@
       linha.appendChild(el("span", `score-badge ${r.aprovado ? "ok" : "rej"}`, `${r.score} pts`));
       const m = r.metricas;
       const detalhe = m
-        ? `soma ${m.soma} · ${m.pares} par(es) · ${m.repeticao} repetida(s)`
+        ? `soma ${m.soma} · ${m.pares} par(es) · padrão ${c.p || "—"}`
         : "—";
       linha.appendChild(el("span", "score-detalhe", detalhe));
       linha.appendChild(el("span", `score-status ${r.aprovado ? "ok" : "rej"}`, r.aprovado ? "aprovado" : "reprovado"));
@@ -420,15 +464,71 @@
 
   /* ---------- gerador ---------- */
 
-  function sorteio(info) {
+  const embaralhar = (lista) => {
+    const copia = [...lista];
+    for (let i = copia.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copia[i], copia[j]] = [copia[j], copia[i]];
+    }
+    return copia;
+  };
+
+  function sorteio(info, qtd) {
     if (info.posicional) return Array.from({ length: info.sorteadas }, () => Math.floor(Math.random() * 10));
     const universo = [];
     for (let d = info.min; d <= info.max; d++) universo.push(d);
-    for (let i = universo.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [universo[i], universo[j]] = [universo[j], universo[i]];
+    return embaralhar(universo).slice(0, qtd || info.aposta_min || info.sorteadas).sort((a, b) => a - b);
+  }
+
+  function padraoDoJogo(info, dezenas) {
+    const perfil = info.perfil;
+    if (!perfil) return "—";
+    const contagem = new Map();
+    for (const d of dezenas) {
+      const linha = Math.floor((d - perfil.inicio) / perfil.colunas);
+      contagem.set(linha, (contagem.get(linha) || 0) + 1);
     }
-    return universo.slice(0, info.aposta_min || info.sorteadas).sort((a, b) => a - b);
+    return [...contagem.values()].sort((a, b) => b - a).join("-");
+  }
+
+  function sorteioComPadrao(info) {
+    const tabela = info.padroes.slice(0, 3);
+    const total = tabela.reduce((s, p) => s + p.quantidade, 0);
+    let sorte = Math.random() * total;
+    let escolha = tabela[0];
+    for (const item of tabela) {
+      sorte -= item.quantidade;
+      if (sorte <= 0) { escolha = item; break; }
+    }
+    const contagens = escolha.padrao.split("-").map(Number);
+    const perfil = info.perfil;
+    const linhas = [];
+    for (let i = 0; i < info.linhas; i++) {
+      const começo = perfil.inicio + i * perfil.colunas;
+      const fim = Math.min(começo + perfil.colunas - 1, info.max);
+      if (começo <= fim) {
+        const numeros = [];
+        for (let d = começo; d <= fim; d++) numeros.push(d);
+        linhas.push(numeros);
+      }
+    }
+    for (let tentativa = 0; tentativa < 50; tentativa++) {
+      const usadas = new Set();
+      const resultado = [];
+      let ok = true;
+      for (const n of contagens) {
+        const candidatos = [];
+        linhas.forEach((nums, indice) => {
+          if (!usadas.has(indice) && nums.length >= n) candidatos.push(indice);
+        });
+        if (!candidatos.length) { ok = false; break; }
+        const indice = candidatos[Math.floor(Math.random() * candidatos.length)];
+        usadas.add(indice);
+        resultado.push(...embaralhar(linhas[indice]).slice(0, n));
+      }
+      if (ok) return resultado.sort((a, b) => a - b);
+    }
+    return sorteio(info, info.sorteadas);
   }
 
   function gerarJogos() {
@@ -437,14 +537,23 @@
     const alvo = $("#jogos");
     alvo.innerHTML = "";
     const anterior = info.concursos.length ? info.concursos[info.concursos.length - 1].z : null;
-    const perfil = info.perfil_aposta || info.perfil;
+    const checkbox = $("#filtrar-padroes");
+    const usarPadroes = (
+      checkbox.checked && !checkbox.disabled
+      && !info.posicional && info.padroes && info.padroes.length
+    );
+    const perfil = usarPadroes ? info.perfil : (info.perfil_aposta || info.perfil);
+    const top3 = new Set((info.padroes || []).slice(0, 3).map((p) => p.padrao));
     for (let i = 0; i < quantidade; i++) {
-      const dezenas = sorteio(info);
+      const dezenas = usarPadroes ? sorteioComPadrao(info) : sorteio(info);
       const soma = dezenas.reduce((s, v) => s + v, 0);
       const pares = dezenas.filter((v) => v % 2 === 0).length;
       const linha = el("div", "jogo");
       linha.appendChild(bolas(dezenas, info.posicional));
       linha.appendChild(el("span", "tag", `soma ${soma} · ${pares} par(es)`));
+      const padrao = padraoDoJogo(info, dezenas);
+      const classePadrao = usarPadroes || top3.has(padrao) ? " ok" : " fora";
+      linha.appendChild(el("span", `score-badge padrao-tag${classePadrao}`, `padrão ${padrao}`));
       const r = pontuarJogo(info, dezenas, anterior, perfil);
       if (r) {
         linha.appendChild(

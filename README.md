@@ -104,6 +104,11 @@ python main.py --loteria timemania --score --ultimos 12
 python main.py --loteria mega-sena --jogos 5 --score-min 125
 python main.py --loteria mega-sena --jogos 5 --sem-score
 
+# padrões de linha: top 3 automático, top 5 ou lista explícita
+python main.py --loteria quina --jogos 5 --padroes top3
+python main.py --loteria quina --jogos 5 --padroes 2-1-1-1,1-1-1-1-1
+python main.py --loteria quina --jogos 5 --sem-padroes
+
 # tabela de regras oficiais / saída JSON
 python main.py --regras
 python main.py --offline --json
@@ -114,7 +119,7 @@ Opções: `--loteria`, `--jogos`, `--dezenas`, `--seed`, `--offline`, `--db`,
 `--impares`, `--primos`, `--moldura`, `--miolo`, `--soma`, `--quadrante-min`,
 `--quadrante-max` (faixa `min-max`); histórico `--fixas`, `--excluidas`,
 `--repetidas`, `--contaminacao`; score `--score`, `--ultimos`, `--score-min`,
-`--sem-score`.
+`--sem-score`; padrões `--padroes`, `--sem-padroes`.
 
 ### Como biblioteca
 
@@ -179,6 +184,34 @@ perfil = loteria.perfil_score
 print(perfil.limiar, perfil.aderencia, perfil.ideal)
 ```
 
+### Padrões de linha
+
+A assinatura de **padrão de linha** é como as dezenas se distribuem pelas linhas
+da malha: na Quina, `2-1-1-1` significa 2 dezenas na 1ª linha (1–10) e 1 em cada
+outra. No histórico recente da Quina esse padrão cai em **55% dos concursos** —
+os concentrados (`3-1-1`, `4-1`, tudo numa linha) somam pouco:
+
+- Na CLI, `--padroes top3` (ou `top5`, ou uma lista `2-1-1-1,1-1-1-1-1`) filtra a
+  geração para jogos cuja distribuição está entre os padrões mais frequentes.
+  Sem a flag, o **top 3 automático** entra quando não há restrições de histórico
+  e cobre ao menos 50% dos concursos; `--sem-padroes` desliga.
+- O resumo da CLI mostra os padrões permitidos com a frequência histórica e a
+  cobertura (`padrões permitidos: 2-1-1-1 (55.0%) · ... · cobertura 91.0%`), e
+  cada jogo sai com `padrao=2-1-1-1`.
+- O filtro vale apenas para jogos do **tamanho do sorteio** e modalidades de
+  conjunto: Lotomania (aposta 50 × sorteio 20) e Timemania (aposta 10 × sorteio
+  7 real) ficam sem filtro de padrão; Super Sete é posicional e não se aplica.
+- No **dashboard**, o card em destaque "Padrões que mais caem" mostra o padrão
+  líder, as barras de frequência e os padrões excluídos; o gerador tem a
+  opção "só padrões top 3" (amostragem ponderada pela frequência histórica) e
+  cada jogo recebe o selo `padrão` — verde no top 3, âmbar fora.
+
+```python
+tabela = loteria.padroes_frequentes     # [{padrao, quantidade, percentual}, ...]
+assinatura = loteria.padrao_linhas(jogo)  # "2-1-1-1"
+cobertura = loteria.padroes_cobertura     # % de concursos cobertos pelo filtro
+```
+
 ### Filtros
 
 | Filtro | Campo | Descrição |
@@ -228,8 +261,9 @@ de concurso ao descobrir o último publicado.
 Página estática com o último concurso de cada modalidade, frequência e atraso,
 distribuição da soma, repetição do concurso anterior, heatmap por coluna da Super
 Sete, **score dos últimos resultados** (limiar e aderência calibrados por
-modalidade) e um gerador rápido que mostra o score de cada jogo. Fica em
-`dashboard/` e é publicada pelo GitHub Actions a cada push.
+modalidade), card em destaque dos **padrões de linha que mais caem** e um gerador
+rápido que mostra score e padrão de cada jogo (com filtro opcional "só padrões
+top 3"). Fica em `dashboard/` e é publicada pelo GitHub Actions a cada push.
 
 Para atualizar os dados da página:
 
@@ -291,6 +325,7 @@ Boas práticas já aplicadas: `.gitignore` exclui `data/*.db`, `.venv`, caches e
 | 8 módulos de modalidade + registry | concluído |
 | CLI `main.py` e validação de integração | concluído |
 | Score adaptativo por modalidade (calibrado no histórico) | concluído |
+| Filtro por padrões de linha (top 3 do histórico) | concluído |
 | Dashboard público com score e gerador | concluído |
 | Suíte de testes | 234 testes verdes |
 

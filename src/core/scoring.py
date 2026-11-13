@@ -26,6 +26,10 @@ __all__ = [
     "PerfilScore",
     "calibrar",
     "avaliar",
+    "padrao_linhas",
+    "frequencias_padroes",
+    "top_padroes",
+    "cobertura_padroes",
     "CRITERIOS_CONJUNTO",
     "CRITERIOS_POSICIONAL",
 ]
@@ -42,7 +46,6 @@ CRITERIOS_CONJUNTO = (
 CRITERIOS_POSICIONAL = ("soma", "pares", "primos", "repeticao", "concentracao")
 
 _METRICA = {"linhas": "max_linha", "concentracao": "max_digito"}
-
 _PONTOS_IDEAL = 20
 _PONTOS_OK = 10
 _PONTOS_FRACO = 5
@@ -85,6 +88,72 @@ def _consecutivos(ordenado: Sequence[int]) -> int:
 
 def _padrao_linhas(contagem: Sequence[int]) -> str:
     return "-".join(str(v) for v in sorted(contagem, reverse=True))
+
+
+def padrao_linhas(jogo: Sequence[int], spec: LotterySpec) -> str:
+    """Assinatura de distribuição do jogo pelas linhas da malha.
+
+    Ex.: na Quina (10 colunas), um jogo com 2 dezenas na primeira linha e 1 em
+    três outras linhas vira ``2-1-1-1``.
+    """
+    if spec.tipo == "posicional":
+        return ""
+    linhas = [
+        (int(d) - spec.inicio) // spec.colunas for d in sorted(int(d) for d in jogo)
+    ]
+    contagem: dict[int, int] = {}
+    for linha in linhas:
+        contagem[linha] = contagem.get(linha, 0) + 1
+    return _padrao_linhas(contagem.values())
+
+
+def frequencias_padroes(
+    spec: LotterySpec,
+    historico: pd.DataFrame | None,
+    limite: int = 8,
+) -> list[dict[str, Any]]:
+    """Padrões de linha mais frequentes no histórico, do mais comum ao menos."""
+    draws = _draws(historico)
+    if spec.tipo == "posicional" or not draws:
+        return []
+    contagem: dict[str, int] = {}
+    for dezenas in draws:
+        padrao = padrao_linhas(dezenas, spec)
+        contagem[padrao] = contagem.get(padrao, 0) + 1
+    total = sum(contagem.values())
+    ordenado = sorted(contagem.items(), key=lambda item: (-item[1], item[0]))
+    return [
+        {
+            "padrao": padrao,
+            "quantidade": quantidade,
+            "percentual": round(100 * quantidade / total, 1) if total else 0.0,
+        }
+        for padrao, quantidade in ordenado[: max(1, int(limite))]
+    ]
+
+
+def top_padroes(
+    spec: LotterySpec,
+    historico: pd.DataFrame | None,
+    n: int = 3,
+) -> list[str]:
+    """Os ``n`` padrões de linha mais frequentes no histórico."""
+    return [item["padrao"] for item in frequencias_padroes(spec, historico, limite=n)]
+
+
+def cobertura_padroes(
+    spec: LotterySpec,
+    historico: pd.DataFrame | None,
+    padroes: Sequence[str],
+) -> float:
+    """Percentual de concursos cobertos por um conjunto de padrões."""
+    alvo = set(padroes)
+    itens = [
+        item
+        for item in frequencias_padroes(spec, historico, limite=10_000)
+        if item["padrao"] in alvo
+    ]
+    return round(sum(item["percentual"] for item in itens), 1)
 
 
 def metricas_conjunto(

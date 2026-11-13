@@ -20,6 +20,7 @@ from typing import Any, Sequence
 
 import pandas as pd
 
+from src.core import scoring
 from src.core.models import FiltroConfig, LotteryConfig, ValidacaoError
 from src.etl.loader import gerador_sintetico
 from src.etl.loader import atualizar_todas as etl_atualizar_todas
@@ -88,6 +89,53 @@ def historico_de(key: str, caminho: Path, offline: bool) -> tuple[pd.DataFrame |
 # --------------------------------------------------------------------------
 # verificação
 # --------------------------------------------------------------------------
+def lista_padroes(texto: str) -> list[str]:
+    """Padrões explícitos da CLI: ``"2-1-1-1,1-1-1-1-1,2-2-1"``."""
+    itens = [parte.strip() for parte in texto.replace(";", ",").split(",")]
+    return [parte for parte in itens if parte]
+
+
+def padroes_do_cli(
+    args: argparse.Namespace,
+    spec: Any,
+    historico: pd.DataFrame | None,
+    qtd: int,
+    permite_auto: bool = True,
+) -> list[str] | None:
+    """Resolve os padrões de linha pedidos (ou o top 3 automático).
+
+    O automático só entra para jogos do tamanho do sorteio, sem restrições de
+    histórico, e apenas quando o top 3 cobre ao menos 50% dos concursos — caso
+    contrário o filtro seria mais caro do que vale.
+    """
+    if args.sem_padroes:
+        return None
+    if args.padroes:
+        texto = args.padroes.strip().lower()
+        if texto.startswith("top"):
+            try:
+                n = int(texto[3:])
+            except ValueError as exc:
+                raise ValidacaoError(
+                    f"padrões inválidos: {args.padroes!r} (use top3/top5 ou lista)"
+                ) from exc
+            return scoring.top_padroes(spec, historico, n=n)
+        return lista_padroes(args.padroes)
+    if not permite_auto:
+        return None
+    if (
+        spec.tipo != "conjunto"
+        or qtd != int(spec.sorteadas)
+        or historico is None
+        or historico.empty
+    ):
+        return None
+    tabela = scoring.frequencias_padroes(spec, historico, limite=3)
+    if not tabela or sum(item["percentual"] for item in tabela) < 50:
+        return None
+    return [item["padrao"] for item in tabela]
+
+
 def verificar(loteria: Any, jogos: list[list[int]], config: LotteryConfig) -> list[str]:
     """Confere os critérios de aceite sobre os jogos gerados."""
     problemas: list[str] = []
@@ -121,6 +169,13 @@ def verificar(loteria: Any, jogos: list[list[int]], config: LotteryConfig) -> li
                     f"jogo {indice} repete {repetidas}x o último concurso "
                     f"(esperado {config.repetidas_concurso_anterior})"
                 )
+        if config.padroes_linha and loteria.padrao_linhas(jogo) not in set(
+            config.padroes_linha
+        ):
+            problemas.append(
+                f"jogo {indice} tem padrão {loteria.padrao_linhas(jogo)} "
+                f"(permitidos: {','.join(config.padroes_linha)})"
+            )
     return problemas
 
 
@@ -320,6 +375,17 @@ def acao_demo(args: argparse.Namespace) -> int:
         registro: dict[str, Any] = {"fonte": fonte, "concursos": concursos}
 
         try:
+            sem_restricoes_historico = not (
+                args.fixas or args.excluidas
+                or args.repetidas is not None or args.contaminacao is not None
+            )
+            config.padroes_linha = padroes_do_cli(
+                args,
+                spec,
+                historico,
+                int(args.dezenas or spec.qtd_padrao),
+                permite_auto=sem_restricoes_historico,
+            )
             loteria = criar(key, config=config, historico=historico)
             if args.score_min is not None:
                 loteria.config.score_minimo = int(args.score_min)
@@ -340,6 +406,17 @@ def acao_demo(args: argparse.Namespace) -> int:
             continue
 
         problemas = verificar(loteria, jogos, config)
+        tabela_padroes = loteria.padroes_frequentes
+        if config.padroes_linha:
+            por_padrao = {item["padrao"]: item["percentual"] for item in tabela_padroes}
+            resumo = " · ".join(
+                f"{padrao} ({por_padrao.get(padrao, 0.0):.1f}%)"
+                for padrao in config.padroes_linha
+            )
+            falar(
+                f"  padrões permitidos: {resumo} · "
+                f"cobertura histórica {loteria.padroes_cobertura:.1f}%"
+            )
         largura = min(74, max((len(formatar(j, posicional)) for j in jogos), default=10))
         for jogo in jogos:
             analise = loteria.analisar(jogo)
@@ -360,6 +437,7 @@ def acao_demo(args: argparse.Namespace) -> int:
                 f"  {texto:<{largura}}  soma={analise['soma']:>4} "
                 f"pares={analise['pares']:>2} primos={analise['primos']:>2} "
                 f"rep={analise['repetidas_ultimo']:>2} "
+                f"{'padrao=' + loteria.padrao_linhas(jogo) + ' ' if not posicional else ''}"
                 f"score={score['score']:>3}"
             )
         falar(f"  → {len(jogos)}/{config.qtd_jogos} jogos válidos · "
@@ -412,6 +490,11 @@ def acao_demo(args: argparse.Namespace) -> int:
                 "scores": [loteria.pontuar(j)["score"] for j in jogos],
                 "score_limiar": loteria.score_minimo,
                 "score_aderencia": loteria.perfil_score.aderencia,
+                "padroes": list(config.padroes_linha or []),
+                "padroes_cobertura": (
+                    loteria.padroes_cobertura if config.padroes_linha else None
+                ),
+                "padroes_tabela": tabela_padroes,
             }
         )
         if restricoes is not None:
@@ -466,6 +549,11 @@ def montar_parser() -> argparse.ArgumentParser:
                    help="gera sem aplicar o filtro de score")
     p.add_argument("--ultimos", type=int, default=10,
                    help="linhas da tabela --score (padrão: 10)")
+    p.add_argument("--padroes", type=str, default=None,
+                   help="filtros por padrão de linha: 'top3', 'top5' ou lista "
+                        "ex.: 2-1-1-1,1-1-1-1-1,2-2-1")
+    p.add_argument("--sem-padroes", action="store_true",
+                   help="gera sem filtrar pelos padrões de linha")
 
     f = p.add_argument_group("filtros quantitativos (faixa min-max)")
     f.add_argument("--pares", type=_faixa)

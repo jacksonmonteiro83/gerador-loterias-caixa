@@ -53,6 +53,7 @@ class LotteryBase(ABC):
             ]
         self._perfil_score: scoring.PerfilScore | None = None
         self._perfis_score: dict[int, scoring.PerfilScore] = {}
+        self._padroes_linha = frozenset(self.config.padroes_linha or [])
         if (
             self.config.repetidas_concurso_anterior is not None
             and self.historico.empty
@@ -266,6 +267,25 @@ class LotteryBase(ABC):
         return metricas
 
     # ------------------------------------------------------------------
+    # padrões de linha
+    # ------------------------------------------------------------------
+    def padrao_linhas(self, jogo: Sequence[int]) -> str:
+        """Assinatura de distribuição do jogo pelas linhas da malha."""
+        return scoring.padrao_linhas(jogo, self.spec)
+
+    @property
+    def padroes_frequentes(self) -> list[dict]:
+        """Padrões de linha mais frequentes no histórico (do mais comum)."""
+        return scoring.frequencias_padroes(self.spec, self.historico)
+
+    @property
+    def padroes_cobertura(self) -> float:
+        """Percentual de concursos cobertos pelos padrões configurados."""
+        return scoring.cobertura_padroes(
+            self.spec, self.historico, self.config.padroes_linha or []
+        )
+
+    # ------------------------------------------------------------------
     # score adaptativo
     # ------------------------------------------------------------------
     @property
@@ -433,6 +453,8 @@ class LotteryBase(ABC):
             return None
         if not self._checa_historico(jogo):
             return None
+        if self._padroes_linha and self.padrao_linhas(jogo) not in self._padroes_linha:
+            return None
         if self.config.score_minimo is not None:
             if self.pontuar(jogo)["score"] < self.score_minimo:
                 return None
@@ -454,6 +476,10 @@ class LotteryBase(ABC):
             partes.append(f"max_repetidas={self.config.max_repetidas}")
         if self.config.contaminacao_maxima is not None:
             partes.append(f"contaminação_maxima={self.config.contaminacao_maxima}")
+        if self.config.padroes_linha:
+            partes.append(f"padrões={','.join(self.config.padroes_linha)}")
+        if self.config.score_minimo is not None:
+            partes.append(f"score_minimo={self.config.score_minimo}")
         return "; ".join(partes) if partes else "sem restrições adicionais"
 
     def gerar_jogo(self) -> list[int]:

@@ -116,6 +116,16 @@ main { max-width: 1120px; margin: 0 auto; padding: 22px 20px 40px; display: grid
 .score-badge { display: inline-block; text-align: center; border-radius: 999px; padding: 3px 9px; font-weight: 650; font-size: .76rem; font-variant-numeric: tabular-nums; }
 .score-badge.ok { background: rgba(53, 208, 127, .16); color: #7bf0b0; border: 1px solid rgba(53, 208, 127, .45); }
 .score-badge.rej { background: rgba(255, 110, 110, .12); color: #ff9d9d; border: 1px solid rgba(255, 110, 110, .35); }
+.score-badge.fora { background: rgba(255, 184, 77, .12); color: #ffd68a; border: 1px solid rgba(255, 184, 77, .4); }
+.padrao-tag { margin-left: 8px; }
+.card.destaque { border-color: rgba(53, 208, 127, .5); box-shadow: 0 0 0 1px rgba(53, 208, 127, .18), 0 12px 32px rgba(53, 208, 127, .08); }
+.padrao-head { display: flex; flex-direction: column; gap: 2px; }
+.padrao-top { font-size: 2rem; line-height: 1.05; color: var(--acento); letter-spacing: .06em; font-variant-numeric: tabular-nums; }
+#barras-padroes .linha-barra .preench.padrao-ok { background: linear-gradient(90deg, #7bf0b0, var(--acento)); }
+#barras-padroes .linha-barra .preench:not(.padrao-ok) { background: linear-gradient(90deg, #ffd68a, var(--alerta)); }
+.check-padrao { display: flex; align-items: center; gap: 6px; color: var(--sub); font-size: .84rem; cursor: pointer; user-select: none; }
+.check-padrao input { accent-color: var(--acento); cursor: pointer; }
+.check-padrao input:disabled { cursor: not-allowed; }
 @media (max-width: 600px) { .score-linha { grid-template-columns: 64px 70px 1fr; } .score-status { display: none; } }
 
 .heat { display: grid; grid-template-columns: 34px repeat(7, 1fr); gap: 4px; font-size: .76rem; }

@@ -36,6 +36,18 @@
 
   <section class="grid-stats" id="stats"></section>
 
+  <section class="card destaque" id="card-padroes">
+    <div class="card-head">
+      <div class="padrao-head">
+        <span class="rotulo">Padrões que mais caem</span>
+        <strong id="padrao-top" class="padrao-top">—</strong>
+      </div>
+      <div class="score-kpi" id="padrao-kpi"></div>
+    </div>
+    <p class="legenda" id="legenda-padroes"></p>
+    <div class="barras-h" id="barras-padroes"></div>
+  </section>
+
   <section class="card">
     <div class="card-head">
       <h2>Score dos últimos resultados</h2>
@@ -76,10 +88,14 @@
       <div class="gerador-controles">
         <label for="qtd">jogos</label>
         <input id="qtd" type="number" min="1" max="20" value="5">
+        <label class="check-padrao" for="filtrar-padroes" title="Gera apenas jogos cuja distribuição por linha está entre os 3 padrões mais frequentes do histórico">
+          <input id="filtrar-padroes" type="checkbox" checked>
+          só padrões top 3
+        </label>
         <button id="gerar" class="btn">Gerar</button>
       </div>
     </div>
-    <p class="legenda">Cada jogo usa o tamanho mínimo de aposta da modalidade e mostra o score do modelo; verde = aprovado no limiar.</p>
+    <p class="legenda">Cada jogo usa o tamanho mínimo de aposta e mostra score e padrão de linha; verde = no top 3 de padrões, âmbar = fora, selo de score verde = aprovado no limiar.</p>
     <div id="jogos" class="jogos"></div>
     <p class="legenda aviso">Nenhum filtro aumenta a chance matemática de acerto. Todos os jogos válidos têm a mesma probabilidade. Proibido para menores de 18 anos.</p>
   </section>

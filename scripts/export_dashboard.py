@@ -75,6 +75,7 @@ def exportar(caminho_db: str | Path | None, destino: str | Path) -> dict:
             perfil_aposta = perfil
             if spec.aposta_min != tamanho_sorteio:
                 perfil_aposta = scoring.calibrar(spec, df, qtd=spec.aposta_min)
+            padroes = scoring.frequencias_padroes(spec, df, limite=8)
             anterior = None
             for _, linha in df.iterrows():
                 dezenas = _dezenas(linha["dezenas"])
@@ -86,6 +87,7 @@ def exportar(caminho_db: str | Path | None, destino: str | Path) -> dict:
                         "z": dezenas,
                         "s": resultado["score"],
                         "a": 1 if resultado["aprovado"] else 0,
+                        "p": scoring.padrao_linhas(dezenas, spec),
                     }
                 )
                 anterior = dezenas
@@ -102,6 +104,13 @@ def exportar(caminho_db: str | Path | None, destino: str | Path) -> dict:
                 perfil_aposta.como_dict()
                 if perfil is not None and perfil_aposta is not perfil
                 else None
+            ),
+            "linhas": spec.linhas,
+            "padroes": padroes,
+            "padroes_top3_cobertura": (
+                round(sum(item["percentual"] for item in padroes[:3]), 1)
+                if padroes
+                else 0.0
             ),
             "concursos": registros,
         }

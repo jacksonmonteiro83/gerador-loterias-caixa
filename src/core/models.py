@@ -61,6 +61,24 @@ def _validar_faixa(nome: str, faixa: tuple[int, int] | None) -> tuple[int, int] 
     return (minimo, maximo)
 
 
+def _normalizar_padrao(valor: Any) -> str:
+    """Normaliza ``"1-2-1"`` para ``"2-1-1"`` (contagens decrescentes)."""
+    if not isinstance(valor, str):
+        raise ValidacaoError(f"padrão de linha deve ser texto (recebido {valor!r})")
+    partes = [parte.strip() for parte in valor.replace(" ", "").split("-")]
+    if not partes or any(not parte for parte in partes):
+        raise ValidacaoError(f"padrão de linha inválido: {valor!r}")
+    try:
+        numeros = [int(parte) for parte in partes]
+    except ValueError as exc:
+        raise ValidacaoError(f"padrão de linha inválido: {valor!r}") from exc
+    if any(numero <= 0 for numero in numeros):
+        raise ValidacaoError(
+            f"padrão de linha deve conter contagens positivas: {valor!r}"
+        )
+    return "-".join(str(numero) for numero in sorted(numeros, reverse=True))
+
+
 @dataclass(frozen=True)
 class LotterySpec:
     """Regras oficiais de uma modalidade."""
@@ -207,6 +225,7 @@ class LotteryConfig:
     max_repetidas: int | None = None  # teto de repetição
     contaminacao_maxima: int | None = None  # teto de sobreposição
     score_minimo: int | None = None  # None desliga o filtro de score
+    padroes_linha: list[str] | None = None  # ex.: ["2-1-1-1", "2-2-1"]
     max_tentativas: int = 200_000
     seed: int | None = None
 
@@ -235,6 +254,20 @@ class LotteryConfig:
             if int(self.score_minimo) > 200:
                 raise ValidacaoError("score_minimo não pode passar de 200")
             self.score_minimo = int(self.score_minimo)
+        if self.padroes_linha is not None:
+            valor = self.padroes_linha
+            if isinstance(valor, str):
+                valor = [valor]
+            if not isinstance(valor, (list, tuple)):
+                raise ValidacaoError(
+                    "padroes_linha deve ser uma lista de padrões (ex.: ['2-1-1-1'])"
+                )
+            normalizados: list[str] = []
+            for item in valor:
+                padrao = _normalizar_padrao(item)
+                if padrao not in normalizados:
+                    normalizados.append(padrao)
+            self.padroes_linha = normalizados or None
         for nome in ("dezenas_fixas", "dezenas_excluidas"):
             valor = getattr(self, nome)
             if valor is None:
@@ -342,4 +375,34 @@ class LotteryConfig:
                 f"{spec.nome}: max_repetidas ({self.max_repetidas}) maior que o "
                 f"tamanho do jogo ({qtd})"
             )
+        if self.padroes_linha:
+            if spec.tipo != "conjunto":
+                raise ValidacaoError(
+                    f"{spec.nome}: padrões de linha não se aplicam a modalidade "
+                    "posicional (cada coluna sorteia um dígito)"
+                )
+            if qtd != int(spec.sorteadas):
+                raise ValidacaoError(
+                    f"{spec.nome}: padrões de linha usam o tamanho do sorteio "
+                    f"({spec.sorteadas} dezenas); ajuste dezenas_por_jogo para "
+                    f"{spec.sorteadas}"
+                )
+            for padrao in self.padroes_linha:
+                partes = [int(parte) for parte in padrao.split("-")]
+                if sum(partes) != qtd:
+                    raise ValidacaoError(
+                        f"{spec.nome}: padrão '{padrao}' soma {sum(partes)} "
+                        f"dezenas, mas o jogo tem {qtd}"
+                    )
+                if len(partes) > spec.linhas:
+                    raise ValidacaoError(
+                        f"{spec.nome}: padrão '{padrao}' usa {len(partes)} linhas, "
+                        f"mas a malha tem {spec.linhas}"
+                    )
+                if max(partes) > spec.colunas:
+                    raise ValidacaoError(
+                        f"{spec.nome}: padrão '{padrao}' concentra "
+                        f"{max(partes)} dezenas numa linha de "
+                        f"{spec.colunas} colunas"
+                    )
         return qtd
