@@ -283,6 +283,18 @@ def acao_atualizar(caminho: Path, offline: bool) -> int:
             f"{total:>6}  {res.get('fonte', '?')}"
             + (f" ({res['erro']})" if res.get("erro") else "")
         )
+    if offline:
+        return 0
+    # Falha se alguma modalidade não veio da Caixa (fallback/sintético):
+    # dados falsos nunca devem ser publicados como se fossem reais.
+    falhas = [
+        key
+        for key, res in resultados.items()
+        if res.get("fonte") != "caixa"
+    ]
+    if falhas:
+        print(f"\nAVISO: modalidades sem dados reais da Caixa: {', '.join(falhas)}")
+        return 2
     return 0
 
 

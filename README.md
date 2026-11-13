@@ -273,6 +273,20 @@ python scripts/export_dashboard.py
 git add dashboard/data.json && git commit -m "Atualiza dados do dashboard" && git push
 ```
 
+### Atualização diária automática
+
+O workflow `.github/workflows/atualizar.yml` roda **todo dia às 3h da manhã
+(horário de Brasília)** no GitHub Actions: baixa os concursos novos da Caixa,
+reexporta `dashboard/data.json`, dá push no `main` e publica o GitHub Pages —
+sem intervenção manual. Também pode ser disparado à mão (aba **Actions** →
+"Atualizar resultados diarios" → **Run workflow**).
+
+Se a Caixa não responder e alguma modalidade não vier com dados reais, o
+`--atualizar` falha com código 2 e nada é publicado: o site continua com o
+último histórico real (e o Actions envia um e-mail de falha ao dono do repo).
+O Super Sete usa um espelho de terceiros (endpoint oficial devolve 500 há
+tempo); se o espelho cair, só ele fica desatualizado nesse dia.
+
 ---
 
 ## Testes
