@@ -4,8 +4,6 @@ on:
   schedule:
     # 06:00 UTC = 03:00 horário de Brasília
     - cron: "0 6 * * *"
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
