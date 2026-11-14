@@ -622,14 +622,17 @@ def calibrar(
     spec: LotterySpec,
     historico: pd.DataFrame | None,
     qtd: int | None = None,
-    fonte: str = "nulo",
+    fonte: str = "historico",
+    janela: int | None = None,
 ) -> PerfilScore:
     """Calibra o modelo de score para um tamanho de jogo.
 
-    ``fonte="nulo"`` (padrão): faixas e limiar vêm de sorteios simulados sob a
-    hipótese nula; o histórico só alimenta a auditoria (``aderencia_hist``).
-    ``fonte="historico"``: comportamento anterior, faixas ajustadas ao histórico
-    (sem histórico, cai numa amostra sintética de 300 sorteios).
+    ``fonte="historico"`` (padrão): faixas e limiar vêm dos concursos reais; com
+    ``janela=N`` usa só os N mais recentes. Sem histórico do tamanho pedido
+    (ex.: aposta de 50 dezenas na Lotomania, cujo sorteio tem 20), cai numa
+    amostra sintética de 300 sorteios.
+    ``fonte="nulo"``: faixas e limiar vêm de sorteios simulados sob a hipótese
+    nula; o histórico só alimenta a auditoria (``aderencia_hist``).
 
     ``qtd`` é o tamanho do jogo que será pontuado (na Lotomania a aposta tem 50
     dezenas, mas o sorteio tem 20; os dois usam faixas próprias).
@@ -637,6 +640,8 @@ def calibrar(
     if fonte not in ("nulo", "historico"):
         raise ValueError("fonte deve ser 'nulo' ou 'historico'")
     draws = _draws(historico)
+    if janela and janela > 0:
+        draws = draws[-int(janela):]
     alvo = int(qtd) if qtd else (len(draws[0]) if draws else int(spec.sorteadas))
 
     if fonte == "nulo":

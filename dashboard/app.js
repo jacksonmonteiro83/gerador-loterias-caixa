@@ -521,8 +521,18 @@
     if (!perfil) { legenda.textContent = "Sem modelo de score para esta modalidade."; return; }
     kpi.append(
       el("span", {}, document.createTextNode("limiar "), el("b", { text: String(perfil.limiar) }), document.createTextNode(`/${perfil.maximo}`)),
-      el("span", {}, document.createTextNode("ao acaso "), el("b", { text: pct(perfil.taxa_nominal) })),
     );
+    if (perfil.fonte !== "nulo") {
+      kpi.append(el("span", {}, document.createTextNode("aprovam "), el("b", { text: pct(perfil.aderencia) })));
+      legenda.textContent =
+        `O score mede tipicidade (quão comum é o jogo entre os sorteios reais), não qualidade nem chance de acerto. ` +
+        `Faixas e limiar foram calibrados nos ${fmt(perfil.amostra)} concursos reais mais recentes; o limiar fica no percentil 65 deles (perto de 35% passam, com variação por empates), ` +
+        `então essa taxa não valida nada (é circular).` +
+        (d.perfil_aposta ? ` Para jogos de ${d.aposta_min} dezenas não há histórico real do mesmo tamanho; o perfil de aposta usa sorteios simulados.` : "");
+      listarScores(d, lista);
+      return;
+    }
+    kpi.append(el("span", {}, document.createTextNode("ao acaso "), el("b", { text: pct(perfil.taxa_nominal) })));
     let compat = "";
     if (perfil.aderencia_hist != null && perfil.aderencia_ic) {
       kpi.append(el("span", {}, document.createTextNode("observado "), el("b", { text: pct(perfil.aderencia_hist) })));
@@ -534,7 +544,10 @@
     legenda.textContent =
       `O score mede tipicidade (quão comum é o jogo entre sorteios aleatórios), não qualidade nem chance de acerto. ` +
       `Faixas e limiar vêm de ${fmt(perfil.amostra_nulo)} sorteios simulados sob o acaso, sem ajuste ao histórico.` + compat;
+    listarScores(d, lista);
+  }
 
+  function listarScores(d, lista) {
     for (const c of [...d.recentes].reverse()) {
       const tipico = Boolean(c.a);
       lista.append(el("div", { class: "score-linha" },

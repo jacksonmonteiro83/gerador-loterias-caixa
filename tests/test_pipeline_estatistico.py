@@ -26,8 +26,8 @@ def _draws(spec, n, semente=1):
 # ---------------- score ----------------
 def test_calibracao_nula_independe_do_historico():
     spec = get_loteria("mega-sena").spec
-    a = scoring.calibrar(spec, pd.DataFrame({"dezenas": _draws(spec, 80, 1)}))
-    b = scoring.calibrar(spec, pd.DataFrame({"dezenas": _draws(spec, 80, 2)}))
+    a = scoring.calibrar(spec, pd.DataFrame({"dezenas": _draws(spec, 80, 1)}), fonte="nulo")
+    b = scoring.calibrar(spec, pd.DataFrame({"dezenas": _draws(spec, 80, 2)}), fonte="nulo")
     assert a.fonte == "nulo"
     assert (a.limiar, a.ideal, a.ok, a.corte) == (b.limiar, b.ideal, b.ok, b.corte)
     assert a.taxa_nominal == b.taxa_nominal > 0
@@ -36,7 +36,7 @@ def test_calibracao_nula_independe_do_historico():
 
 def test_aderencia_historica_tem_ic_de_wilson_e_cobre_a_taxa_nominal():
     spec = get_loteria("lotofacil").spec
-    perfil = scoring.calibrar(spec, pd.DataFrame({"dezenas": _draws(spec, 600, 3)}))
+    perfil = scoring.calibrar(spec, pd.DataFrame({"dezenas": _draws(spec, 600, 3)}), fonte="nulo")
     lo, hi = perfil.aderencia_ic
     assert lo <= perfil.aderencia_hist <= hi
     assert perfil.amostra_hist == 599
@@ -46,9 +46,9 @@ def test_aderencia_historica_tem_ic_de_wilson_e_cobre_a_taxa_nominal():
 
 def test_perfil_em_cache_nao_vaza_mutacao():
     spec = get_loteria("quina").spec
-    p1 = scoring.calibrar(spec, None)
+    p1 = scoring.calibrar(spec, None, fonte="nulo")
     p1.corte["soma"] = [0, 0]
-    p2 = scoring.calibrar(spec, None)
+    p2 = scoring.calibrar(spec, None, fonte="nulo")
     assert p2.corte["soma"] != [0, 0]
 
 

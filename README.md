@@ -166,8 +166,7 @@ valores fixos pensados para 1–80 com 7 dezenas.
 - Antes da pontuação há **blocos rígidos** (soma fora da faixa histórica,
   extremos, amplitude, linha concentrada, quadrantes vazios, consecutivos e
   repetição acima do corte). Um jogo que cai em qualquer bloco recebe 0 pts.
-- A nota de corte é o **percentil 65 dos scores de sorteios simulados sob o
-  acaso** (aprox. 35% dos jogos passam; `calibrar(..., fonte="historico")` mantém o modo antigo), limitada a 70–125 (conjunto) ou 45–90 (posicional).
+- A nota de corte é o **percentil 65 dos scores dos concursos reais da janela** (aprox. 35% dos jogos passam; `calibrar(..., fonte="nulo")` usa sorteios simulados), limitada a 70–125 (conjunto) ou 45–90 (posicional).
 - Lotomania (aposta de 50 dezenas, sorteio de 20) e Timemania (aposta de 10,
   sorteio de 7) usam um perfil por tamanho de jogo.
 - Na CLI o filtro de score é automático **apenas** quando não há restrições de
@@ -282,9 +281,17 @@ Arquitetura:
   avisa e mostra os intervalos de confiança correspondentes.
 - **Validação antes de publicar:** dezena fora da faixa, duplicata ou tamanho de
   sorteio errado derrompem o export (exit 3); lacunas só geram aviso.
-- **Score = tipicidade**, calibrado por simulação sob o acaso (`fonte="nulo"`),
-  não por ajuste a poucos concursos. O histórico entra só como auditoria
-  (taxa observada com IC de Wilson vs. taxa esperada ao acaso).
+- **Score = tipicidade**, calibrado nos **concursos reais** mais recentes
+  (janela de 500 por padrão; `python scripts/export_dashboard.py --janela N`, `0` =
+  todo o histórico). Como o sorteio é aleatório, qualquer janela só descreve o
+  que é comum; a taxa de aprovação nela é circular e não valida nada. O backtest
+  calibra só com concursos anteriores à janela testada (sem vazamento). Para
+  jogos de tamanho diferente do sorteio (Lotomania 50, Timemania 10) não existe
+  histórico real do mesmo tamanho, então esse perfil é sintético. A calibração
+  por simulação continua disponível (`calibrar(..., fonte="nulo")`).
+- **Importar planilha da Caixa** (se a API falhar): baixe o xlsx de cada modalidade
+  no site de resultados e rode `python scripts/importar_planilha.py mega-sena
+  Mega-Sena.xlsx`; ele valida e mescla em `data/historico/`. Depois rode o export.
 - **Gerador:** `crypto.getRandomValues` sem viés de módulo, Fisher-Yates parcial
   e filtros por amostragem com rejeição (uniforme dentro do conjunto aceito).
   "Evitar datas (≤ 31)" é uma heurística de rateio: não muda a chance de acerto.

@@ -35,6 +35,7 @@ from src.loterias.registry import get_loteria  # noqa: E402
 from src.utils import db  # noqa: E402
 
 VERSAO_SCHEMA = 3
+JANELA_PADRAO = 500  # concursos recentes usados para calibrar o score (0 = todos)
 
 MODALIDADES: dict[str, dict] = {
     "mega-sena": {"nome": "Mega-Sena", "posicional": False, "sorteadas": 6},
@@ -86,7 +87,10 @@ def _carregar_registros(chave: str, caminho_db, diretorio) -> list[dict]:
     return saida
 
 
-def _modalidade(chave: str, info: dict, registros: list[dict], validacao: dict, backtest: bool) -> dict:
+def _modalidade(
+    chave: str, info: dict, registros: list[dict], validacao: dict, backtest: bool,
+    janela: int = JANELA_PADRAO,
+) -> dict:
     spec = get_loteria(chave).spec
     k = info["sorteadas"]  # tamanho real do sorteio (≠ aposta na Timemania/Lotomania)
     draws = [r["z"] for r in registros]
@@ -106,10 +110,12 @@ def _modalidade(chave: str, info: dict, registros: list[dict], validacao: dict, 
         return {**base, "n": 0, "completo": False, "faltantes": 0, "vazio": True}
 
     resumo = auditoria.resumir(spec, draws)
-    # faixas vindas de simulação sob H0; o histórico só audita a taxa de aprovação
-    perfil = scoring.calibrar(spec, _df(draws), qtd=k)
+    # faixas e limiar calibrados nos concursos reais mais recentes (janela)
+    perfil = scoring.calibrar(spec, _df(draws), qtd=k, janela=janela)
     perfil_aposta = None
     if spec.aposta_min != k:
+        # o sorteio tem outro tamanho que a aposta (Lotomania, Timemania): não há
+        # histórico real de jogos desse tamanho, então este perfil é sintético
         perfil_aposta = scoring.calibrar(spec, None, qtd=spec.aposta_min)
 
     recentes = []
@@ -128,12 +134,15 @@ def _modalidade(chave: str, info: dict, registros: list[dict], validacao: dict, 
         )
 
     teste = auditoria.auditar(spec, resumo)
-    perfil_bt = perfil_aposta or perfil
-    bt = (
-        auditoria.backtest(spec, perfil_bt, draws, top3=resumo.get("padroes_top3"))
-        if backtest
-        else None
-    )
+    bt = None
+    bt_n = min(300, len(draws) // 3)
+    if backtest and bt_n >= 30:
+        # sem vazamento: o perfil do backtest só vê concursos anteriores à janela testada
+        treino = draws[: len(draws) - bt_n]
+        perfil_bt = perfil_aposta or scoring.calibrar(spec, _df(treino), qtd=k, janela=janela)
+        bt = auditoria.backtest(
+            spec, perfil_bt, draws, top3=resumo.get("padroes_top3"), max_concursos=bt_n
+        )
     rateio = auditoria.analise_rateio(spec, registros)
 
     saida = {
@@ -166,6 +175,7 @@ def exportar(
     diretorio_historico,
     destino: str | Path,
     backtest: bool = True,
+    janela: int = JANELA_PADRAO,
 ) -> dict:
     """Lê as modalidades e grava ``index.json`` + um JSON por modalidade."""
     destino = Path(destino)
@@ -185,7 +195,7 @@ def exportar(
         validacao = validar_historico(spec, registros, sorteadas=info["sorteadas"])
         for erro in validacao["erros"]:
             erros_fatais.append(f"{chave}: {erro}")
-        dados = _modalidade(chave, info, registros, validacao, backtest)
+        dados = _modalidade(chave, info, registros, validacao, backtest, janela)
         dados["gerado_em"] = hoje
         arquivo = destino / f"{chave}.json"
         with arquivo.open("w", encoding="utf-8") as fh:
@@ -215,12 +225,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--db", default=None, help="SQLite de apoio (padrão: data/loterias.db)")
     parser.add_argument("--historico-dir", default=None, help="pasta dos .jsonl (padrão: data/historico)")
     parser.add_argument("--saida", default=str(RAIZ / "dashboard" / "data"), help="pasta de saída")
+    parser.add_argument("--janela", type=int, default=JANELA_PADRAO,
+                        help="concursos recentes que calibram o score (0 = todo o histórico)")
     parser.add_argument("--sem-backtest", action="store_true", help="pula o backtest (mais rápido)")
     args = parser.parse_args(argv)
 
     caminho_db = args.db or db.DEFAULT_DB
     try:
-        indice = exportar(caminho_db, args.historico_dir, args.saida, backtest=not args.sem_backtest)
+        indice = exportar(caminho_db, args.historico_dir, args.saida, backtest=not args.sem_backtest, janela=args.janela)
     except ValueError as exc:
         print(f"ERRO: {exc}", file=sys.stderr)
         return 3
