@@ -1,567 +1,703 @@
-/* Dashboard estático das Loterias Caixa — sem dependências. */
+/* Dashboard estático das Loterias Caixa.
+ *
+ * Todo o cálculo estatístico é pré-computado em Python (scripts/export_dashboard.py,
+ * testado contra scipy). Aqui só se desenha e se geram jogos, então cada
+ * modalidade é um JSON pequeno baixado sob demanda.
+ */
 (() => {
   "use strict";
 
-  const $ = (sel) => document.querySelector(sel);
-  const el = (tag, cls, html) => {
+  const G = window.Gerador;
+  const NS = "http://www.w3.org/2000/svg";
+
+  /* ---------- utilidades ---------- */
+
+  const $ = (sel, raiz = document) => raiz.querySelector(sel);
+
+  function el(tag, opts = {}, ...filhos) {
     const node = document.createElement(tag);
-    if (cls) node.className = cls;
-    if (html !== undefined) node.innerHTML = html;
+    for (const [k, v] of Object.entries(opts)) {
+      if (v === undefined || v === null || v === false) continue;
+      if (k === "class") node.className = v;
+      else if (k === "text") node.textContent = v;
+      else node.setAttribute(k, v === true ? "" : v);
+    }
+    for (const f of filhos) if (f) node.append(f);
     return node;
-  };
-  const fmt = (n) => n.toLocaleString("pt-BR");
+  }
+
+  function svg(tag, attrs = {}, ...filhos) {
+    const node = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+    for (const f of filhos) if (f) node.append(f);
+    return node;
+  }
+
+  const dec = (x, casas = 1) =>
+    Number(x).toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas });
+  const fmt = (n) => Number(n).toLocaleString("pt-BR");
+  const pct = (x, casas = 1) => `${dec(x, casas)}%`;
+  const fmtP = (p) => (p < 0.001 ? "<0,001" : dec(p, 3));
   const fmtData = (iso) => {
     if (!iso) return "—";
     const [a, m, d] = iso.split("-");
     return `${d}/${m}/${a}`;
   };
-  const media = (arr) => (arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : 0);
+  const rotuloBola = (v, posicional) => (posicional ? String(v) : String(v).padStart(2, "0"));
+  const limpar = (no) => { no.replaceChildren(); return no; };
 
-  const ehPrimo = (n) => {
-    if (n < 2) return false;
-    for (let i = 2; i * i <= n; i++) if (n % i === 0) return false;
-    return true;
-  };
-  const PRIMOS = new Set(Array.from({ length: 99 }, (_, i) => i + 2).filter(ehPrimo));
-  const METRICA = { linhas: "max_linha", concentracao: "max_digito" };
-
-  const estado = { dados: null, atual: "mega-sena", metrica: "freq" };
+  const estado = { indice: null, cache: new Map(), atual: null, dados: null, metrica: "freq", token: 0, ultimosJogos: [] };
 
   /* ---------- carregamento ---------- */
 
+  function mostrarEstado(texto, { erro = false, tentar = null } = {}) {
+    const alvo = $("#estado");
+    limpar(alvo);
+    alvo.className = `estado${erro ? " erro" : ""}${texto ? "" : " vazio"}`;
+    alvo.setAttribute("role", erro ? "alert" : "status");
+    if (!texto) return;
+    alvo.append(el("span", { text: texto }));
+    if (tentar) {
+      const b = el("button", { type: "button", class: "btn btn-sec", text: "Tentar de novo" });
+      b.addEventListener("click", tentar);
+      alvo.append(b);
+    }
+  }
+
+  async function buscarJSON(url, opcoes) {
+    const resposta = await fetch(url, opcoes);
+    if (!resposta.ok) throw new Error(`HTTP ${resposta.status}`);
+    return resposta.json();
+  }
+
   async function iniciar() {
+    mostrarEstado("Carregando dados…");
     try {
-      const resposta = await fetch("data.json", { cache: "no-store" });
-      if (!resposta.ok) throw new Error(`HTTP ${resposta.status}`);
-      estado.dados = await resposta.json();
+      // revalida com o servidor (ETag) em vez de ignorar o cache por completo
+      estado.indice = await buscarJSON("data/index.json", { cache: "no-cache" });
     } catch (erro) {
-      $("#hero").innerHTML = `<p class="legenda">Não foi possível carregar <code>data.json</code> (${erro.message}). Rode <code>python scripts/export_dashboard.py</code>.</p>`;
+      $("#atualizado").textContent = "Falha ao carregar";
+      mostrarEstado(`Não foi possível carregar os dados (${erro.message}).`, { erro: true, tentar: iniciar });
       return;
     }
-    montarTabs();
-    $("#atualizado").textContent = `Gerado em ${fmtData(estado.dados.gerado_em)}`;
-    const total = Object.values(estado.dados.loterias).reduce((s, l) => s + l.concursos.length, 0);
+    const indice = estado.indice;
+    $("#atualizado").textContent = `Gerado em ${fmtData(indice.gerado_em)}`;
+    $("#rodape-data").textContent = fmtData(indice.gerado_em);
+    const total = Object.values(indice.loterias).reduce((s, l) => s + l.n, 0);
     $("#total-concursos").textContent = `${fmt(total)} concursos no histórico`;
-    $("#rodape-data").textContent = fmtData(estado.dados.gerado_em);
-    renderizar();
+    montarTabs();
+    montarControles();
+    const inicial = location.hash.slice(1);
+    abrir(indice.loterias[inicial] ? inicial : Object.keys(indice.loterias)[0]);
+  }
+
+  async function abrir(chave) {
+    const token = ++estado.token;
+    estado.atual = chave;
+    for (const b of $("#tabs").querySelectorAll("button")) {
+      const ativo = b.dataset.chave === chave;
+      b.setAttribute("aria-selected", ativo ? "true" : "false");
+      b.tabIndex = ativo ? 0 : -1;
+    }
+    if (location.hash.slice(1) !== chave) history.replaceState(null, "", `#${chave}`);
+    const meta = estado.indice.loterias[chave];
+    $("#painel").setAttribute("aria-busy", "true");
+    $("#painel").setAttribute("aria-labelledby", `tab-${chave}`);
+
+    let dados = estado.cache.get(chave);
+    if (!dados) {
+      mostrarEstado(`Carregando ${meta.nome}…`);
+      try {
+        const versao = meta.ultimo && meta.ultimo.n ? `?v=${meta.ultimo.n}-${estado.indice.gerado_em}` : "";
+        dados = await buscarJSON(`${meta.arquivo}${versao}`);
+        estado.cache.set(chave, dados);
+      } catch (erro) {
+        if (token !== estado.token) return;
+        mostrarEstado(`Não foi possível carregar ${meta.nome} (${erro.message}).`, { erro: true, tentar: () => abrir(chave) });
+        return;
+      }
+    }
+    if (token !== estado.token) return; // o usuário já trocou de modalidade
+    estado.dados = dados;
+    mostrarEstado("");
+    renderizar(dados);
+    $("#painel").setAttribute("aria-busy", "false");
   }
 
   function montarTabs() {
-    const nav = $("#tabs");
-    nav.innerHTML = "";
-    for (const [chave, info] of Object.entries(estado.dados.loterias)) {
-      const botao = el("button", "", info.nome);
-      botao.type = "button";
-      botao.setAttribute("role", "tab");
-      botao.setAttribute("aria-selected", chave === estado.atual ? "true" : "false");
-      botao.addEventListener("click", () => {
-        estado.atual = chave;
-        for (const b of nav.querySelectorAll("button")) b.setAttribute("aria-selected", "false");
-        botao.setAttribute("aria-selected", "true");
-        renderizar();
+    const nav = limpar($("#tabs"));
+    const chaves = Object.keys(estado.indice.loterias);
+    for (const chave of chaves) {
+      const botao = el("button", {
+        type: "button", role: "tab", id: `tab-${chave}`, "data-chave": chave,
+        "aria-controls": "painel", "aria-selected": "false", tabindex: "-1",
+        text: estado.indice.loterias[chave].nome,
       });
-      nav.appendChild(botao);
+      botao.addEventListener("click", () => abrir(chave));
+      botao.addEventListener("keydown", (ev) => {
+        const i = chaves.indexOf(chave);
+        let alvo = null;
+        if (ev.key === "ArrowRight") alvo = chaves[(i + 1) % chaves.length];
+        else if (ev.key === "ArrowLeft") alvo = chaves[(i - 1 + chaves.length) % chaves.length];
+        else if (ev.key === "Home") alvo = chaves[0];
+        else if (ev.key === "End") alvo = chaves[chaves.length - 1];
+        if (alvo) { ev.preventDefault(); abrir(alvo); $(`#tab-${alvo}`).focus(); }
+      });
+      nav.append(botao);
     }
-    document.querySelector(".toggle").addEventListener("click", (evento) => {
-      const botao = evento.target.closest("button[data-metrica]");
+    window.addEventListener("hashchange", () => {
+      const h = location.hash.slice(1);
+      if (estado.indice.loterias[h] && h !== estado.atual) abrir(h);
+    });
+  }
+
+  function montarControles() {
+    $(".toggle").addEventListener("click", (ev) => {
+      const botao = ev.target.closest("button[data-metrica]");
       if (!botao) return;
       estado.metrica = botao.dataset.metrica;
-      for (const b of document.querySelectorAll(".toggle button")) b.classList.toggle("ativo", b === botao);
-      desenharFrequencia();
-    });
-    $("#gerar").addEventListener("click", gerarJogos);
-  }
-
-  /* ---------- dados derivados ---------- */
-
-  function derivar(info) {
-    const concursos = info.concursos;
-    const universo = info.max - info.min + 1;
-    const ultimo = concursos[concursos.length - 1] || null;
-
-    const somas = concursos.map((c) => c.z.reduce((s, v) => s + v, 0));
-    const pares = concursos.map((c) => c.z.filter((v) => v % 2 === 0).length);
-    const repeticoes = [];
-    for (let i = 1; i < concursos.length; i++) {
-      const anterior = new Set(concursos[i - 1].z);
-      repeticoes.push(concursos[i].z.filter((v) => anterior.has(v)).length);
-    }
-
-    let freq = null;
-    let atrasos = null;
-    let colunas = null;
-
-    if (info.posicional) {
-      colunas = Array.from({ length: info.sorteadas }, () => new Array(10).fill(0));
-      for (const c of concursos) c.z.forEach((v, i) => { if (colunas[i]) colunas[i][v]++; });
-    } else {
-      freq = new Map();
-      for (let d = info.min; d <= info.max; d++) freq.set(d, 0);
-      for (const c of concursos) for (const d of c.z) freq.set(d, (freq.get(d) || 0) + 1);
-      atrasos = new Map();
-      for (let d = info.min; d <= info.max; d++) {
-        let atraso = concursos.length;
-        for (let i = concursos.length - 1; i >= 0; i--) {
-          if (concursos[i].z.includes(d)) { atraso = concursos.length - 1 - i; break; }
-        }
-        atrasos.set(d, atraso);
+      for (const b of $(".toggle").querySelectorAll("button")) {
+        b.setAttribute("aria-pressed", b === botao ? "true" : "false");
       }
-    }
-
-    return { universo, ultimo, somas, pares, repeticoes, freq, atrasos, colunas };
-  }
-
-  /* ---------- render ---------- */
-
-  function renderizar() {
-    const info = estado.dados.loterias[estado.atual];
-    const d = derivar(info);
-    $("#nota-loteria").textContent = info.nota || "";
-    renderHero(info, d);
-    renderStats(info, d);
-    renderPadroes(info);
-    renderScore(info);
-    desenharFrequencia(info, d);
-    desenharSoma(info, d);
-    desenharRepeticao(info, d);
-    $("#jogos").innerHTML = "";
-  }
-
-  function bolas(dezenas, posicional) {
-    const wrap = el("div", "bolas");
-    dezenas.forEach((v) => {
-      const b = el("span", `bola${posicional ? " azul" : ""}`, String(v).padStart(2, "0"));
-      if (posicional) b.textContent = String(v);
-      wrap.appendChild(b);
+      desenharFrequencia(estado.dados);
     });
-    return wrap;
+    $("#tabela-freq").addEventListener("toggle", (ev) => {
+      if (ev.target.open) montarTabelaFrequencia(estado.dados);
+    });
+    $("#form-gerador").addEventListener("submit", (ev) => { ev.preventDefault(); gerarJogos(); });
+    $("#copiar").addEventListener("click", copiarJogos);
   }
 
-  function renderHero(info, d) {
-    const u = d.ultimo;
-    $("#ultimo-rotulo").textContent = info.posicional ? "Último concurso · dígitos por coluna" : "Último concurso";
-    $("#ultimo-numero").textContent = u ? `#${fmt(u.n)}` : "—";
-    $("#ultimo-data").textContent = u ? fmtData(u.d) : "sem dados";
-    const alvo = $("#ultimo-bolas");
-    alvo.innerHTML = "";
-    if (u) alvo.appendChild(bolas(u.z, info.posicional));
+  /* ---------- gráficos SVG ---------- */
+
+  const W = 720, H = 210, MARGEM = { e: 38, d: 8, t: 10, b: 24 };
+
+  function eixoY(maximo, escala) {
+    const passo = maximo / 2;
+    return [0, passo, maximo].map((v) => ({ v, y: escala(v) }));
   }
 
-  function renderStats(info, d) {
-    const n = info.concursos.length;
-    const primeiro = info.concursos[0];
-    const ultimo = d.ultimo;
-    const cartoes = [
-      ["Concursos", fmt(n)],
-      ["Período", `${fmtData(primeiro?.d)} – ${fmtData(ultimo?.d)}`],
-      ["Soma média", n ? Math.round(media(d.somas)) : "—"],
-      ["Pares por jogo", n ? media(d.pares).toFixed(1) : "—"],
-      ["Dezenas", info.posicional ? `${info.sorteadas} colunas` : `${info.sorteadas} de ${info.min}–${info.max}`],
-      ["Repetição média", info.posicional ? "—" : d.repeticoes.length ? media(d.repeticoes).toFixed(1) : "—"],
-    ];
-    const alvo = $("#stats");
-    alvo.innerHTML = "";
-    for (const [rotulo, valor] of cartoes) {
-      const cartao = el("div", "stat", `<span>${rotulo}</span><b>${valor}</b>`);
-      alvo.appendChild(cartao);
+  /**
+   * Barras com referência: linha de esperado, faixa central opcional e limites.
+   * cfg: { valores, rotulos, titulos, esperado, banda, limites:[{valor, rotulo, classe}], fora(i), descricao }
+   */
+  function graficoBarras(cfg) {
+    const n = cfg.valores.length;
+    const referencias = [cfg.esperado, cfg.maximoExtra, ...(cfg.banda || []), ...(cfg.limites || []).map((l) => l.valor)].filter((v) => v != null);
+    const maximo = Math.max(1, ...cfg.valores, ...referencias) * 1.08;
+    const larguraUtil = W - MARGEM.e - MARGEM.d;
+    const alturaUtil = H - MARGEM.t - MARGEM.b;
+    const y = (v) => MARGEM.t + alturaUtil * (1 - v / maximo);
+    const passoX = larguraUtil / n;
+    const larguraBarra = Math.max(2, passoX * 0.78);
+
+    const s = svg("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": cfg.descricao, class: "svg-grafico" });
+    for (const t of eixoY(maximo, y)) {
+      s.append(svg("line", { x1: MARGEM.e, x2: W - MARGEM.d, y1: t.y, y2: t.y, class: "grade" }));
+      const rotulo = svg("text", { x: MARGEM.e - 5, y: t.y + 3, class: "eixo-txt", "text-anchor": "end" });
+      rotulo.textContent = fmt(Math.round(t.v * 10) / 10);
+      s.append(rotulo);
     }
+    if (cfg.banda) {
+      s.append(svg("rect", {
+        x: MARGEM.e, width: larguraUtil, y: y(cfg.banda[1]), height: Math.max(0, y(cfg.banda[0]) - y(cfg.banda[1])), class: "banda",
+      }));
+    }
+    cfg.valores.forEach((v, i) => {
+      const x = MARGEM.e + i * passoX + (passoX - larguraBarra) / 2;
+      const alto = Math.max(1, alturaUtil * (v / maximo));
+      const barra = svg("rect", {
+        x: x.toFixed(2), y: (MARGEM.t + alturaUtil - alto).toFixed(2), width: larguraBarra.toFixed(2), height: alto.toFixed(2),
+        class: `barra${cfg.fora && cfg.fora(i) ? " fora" : ""}`,
+      });
+      const titulo = svg("title");
+      titulo.textContent = cfg.titulos[i];
+      barra.append(titulo);
+      s.append(barra);
+    });
+    if (cfg.esperado != null) {
+      s.append(svg("line", { x1: MARGEM.e, x2: W - MARGEM.d, y1: y(cfg.esperado), y2: y(cfg.esperado), class: "ref-esperado" }));
+    }
+    for (const l of cfg.limites || []) {
+      s.append(svg("line", { x1: MARGEM.e, x2: W - MARGEM.d, y1: y(l.valor), y2: y(l.valor), class: l.classe }));
+    }
+    const passoRotulo = Math.max(1, Math.ceil(n / 20));
+    cfg.rotulos.forEach((r, i) => {
+      if (i % passoRotulo !== 0 && i !== n - 1) return;
+      const t = svg("text", { x: MARGEM.e + i * passoX + passoX / 2, y: H - 8, class: "eixo-txt", "text-anchor": "middle" });
+      t.textContent = r;
+      s.append(t);
+    });
+    return s;
   }
 
-  function desenharFrequencia(info, d) {
-    const alvo = $("#grafico-freq");
-    alvo.innerHTML = "";
-    alvo.className = "grafico-freq";
-    alvo.style.display = info.posicional ? "block" : "flex";
-
-    if (info.posicional) {
-      desenharHeat(info, d, alvo);
-      $("#legenda-freq").textContent = "Acertos de cada dígito por coluna nos últimos concursos.";
-      return;
-    }
-
-    const n = info.concursos.length;
-    const esperado = n ? (n * info.sorteadas) / d.universo : 0;
-    const usarAtraso = estado.metrica === "atraso";
-    const valores = usarAtraso
-      ? [...d.atrasos.entries()]
-      : [...d.freq.entries()];
-    const maximo = Math.max(1, ...valores.map(([, v]) => v));
-    const passo = Math.ceil(valores.length / 22);
-
-    for (const [dezena, valor] of valores) {
-      const col = el("div", "col");
-      if (!usarAtraso && valor >= esperado * 1.15) col.classList.add("quente");
-      const barra = el("div", "barra");
-      barra.style.height = `${Math.max(2, (valor / maximo) * 100)}%`;
-      barra.title = `${dezena}: ${usarAtraso ? `${valor} concursos sem sair` : `${valor} aparições`}`;
-      col.appendChild(barra);
-      const rotulo = el("small", "", String(dezena).padStart(2, "0"));
-      if (dezena % passo !== 0 && dezena !== info.max) rotulo.style.visibility = "hidden";
-      col.appendChild(rotulo);
-      alvo.appendChild(col);
-    }
-
-    $("#legenda-freq").textContent = usarAtraso
-      ? "Concursos desde a última aparição de cada dezena (maior = mais atrasada)."
-      : `${n} concursos · frequência média esperada ${esperado.toFixed(1)} por dezena · barras verdes acima de 15% da média.`;
+  function graficoHistograma(bins, descricao) {
+    const esperados = bins.map((b) => b.esp);
+    const observados = bins.map((b) => b.obs);
+    // a escala do eixo Y precisa cobrir também os pontos esperados
+    const grafico = graficoBarras({
+      valores: observados,
+      rotulos: bins.map((b) => String(b.ini)),
+      titulos: bins.map((b) => `${b.ini}–${b.fim}: ${b.obs} observados · ${dec(b.esp, 1)} esperados`),
+      maximoExtra: Math.max(...esperados),
+      descricao,
+    });
+    const n = bins.length;
+    const maximo = Math.max(1, ...observados, ...esperados) * 1.08;
+    const passoX = (W - MARGEM.e - MARGEM.d) / n;
+    const alturaUtil = H - MARGEM.t - MARGEM.b;
+    const pts = esperados.map((v, i) => [
+      MARGEM.e + i * passoX + passoX / 2,
+      MARGEM.t + alturaUtil * (1 - v / maximo),
+    ]);
+    grafico.append(svg("polyline", { points: pts.map((p) => p.join(",")).join(" "), class: "linha-esp" }));
+    for (const [cx, cy] of pts) grafico.append(svg("circle", { cx, cy, r: 3, class: "ponto-esp" }));
+    return grafico;
   }
 
-  function desenharHeat(info, d, alvo) {
-    const maximo = Math.max(1, ...d.colunas.flat());
-    const grade = el("div", "heat");
-    grade.appendChild(el("div"));
-    for (let c = 1; c <= info.sorteadas; c++) grade.appendChild(el("div", "cab", `C${c}`));
-    for (let digito = 0; digito <= 9; digito++) {
-      grade.appendChild(el("div", "eixo", String(digito)));
-      d.colunas.forEach((contagem) => {
-        const valor = contagem[digito];
-        const intensidade = 0.08 + (valor / maximo) * 0.6;
-        const cel = el("div", "cel", String(valor));
-        cel.style.background = `rgba(74, 158, 255, ${intensidade.toFixed(2)})`;
-        cel.title = `${valor} aparições`;
-        grade.appendChild(cel);
+  function heatmap(d) {
+    const { colunas, freq_ref: ref, n } = d;
+    const p = 1 / (d.max - d.min + 1);
+    const dp = Math.sqrt(n * p * (1 - p));
+    const grade = el("div", { class: "heat", role: "img", "aria-label": `Frequência de cada dígito por coluna em ${fmt(n)} concursos; esperado ${dec(ref.esperado, 1)} por célula` });
+    grade.style.gridTemplateColumns = `34px repeat(${colunas.length}, 1fr)`;
+    grade.append(el("div"));
+    colunas.forEach((_, i) => grade.append(el("div", { class: "cab", text: `C${i + 1}` })));
+    for (let dig = d.min; dig <= d.max; dig++) {
+      grade.append(el("div", { class: "eixo", text: String(dig) }));
+      colunas.forEach((col) => {
+        const valor = col[dig - d.min];
+        const z = dp > 0 ? (valor - ref.esperado) / dp : 0;
+        const intensidade = Math.min(1, Math.abs(z) / 3);
+        const cel = el("div", { class: `cel${Math.abs(z) > 1.96 ? " destaque-z" : ""}`, text: String(valor) });
+        const cor = z >= 0 ? "74, 158, 255" : "255, 184, 77";
+        cel.style.background = `rgba(${cor}, ${(0.06 + intensidade * 0.6).toFixed(2)})`;
+        cel.title = `${valor} aparições · esperado ${dec(ref.esperado, 1)} · z = ${dec(z, 2)}`;
+        grade.append(cel);
       });
     }
-    alvo.classList.remove("grafico-freq");
-    alvo.classList.add("grafico-heat");
-    alvo.appendChild(grade);
-    alvo.style.display = "block";
+    return grade;
   }
 
-  function desenharSoma(info, d) {
-    const alvo = $("#histograma-soma");
-    alvo.innerHTML = "";
-    const somas = d.somas;
-    if (!somas.length) return;
-    const min = Math.min(...somas);
-    const max = Math.max(...somas);
-    const faixas = 12;
-    const largura = Math.max(1, Math.ceil((max - min + 1) / faixas));
-    const baldes = new Array(faixas).fill(0);
-    somas.forEach((s) => {
-      const indice = Math.min(faixas - 1, Math.floor((s - min) / largura));
-      baldes[indice]++;
-    });
-    const pico = Math.max(1, ...baldes);
-    baldes.forEach((qtd, i) => {
-      const col = el("div", "col");
-      const barra = el("div", "barra");
-      barra.style.height = `${Math.max(2, (qtd / pico) * 100)}%`;
-      const inicio = min + i * largura;
-      barra.title = `${inicio}–${inicio + largura - 1}: ${qtd} sorteios`;
-      col.appendChild(barra);
-      if (i % 2 === 0) col.appendChild(el("small", "", String(inicio)));
-      alvo.appendChild(col);
-    });
-    $("#legenda-soma").textContent = `Soma típica entre ${min} e ${max}; média ${Math.round(media(somas))}.`;
-  }
-
-  function desenharRepeticao(info, d) {
-    const alvo = $("#barras-repeticao");
-    alvo.innerHTML = "";
-    if (info.posicional) {
-      alvo.innerHTML = "<p class='legenda'>Na Super Sete o conceito de repetição é por coluna, não por conjunto de dezenas.</p>";
-      return;
+  function linhaBarra({ rotulo, rotuloExtra, obs, esp, maximo, texto, titulo }) {
+    const trilho = el("div", { class: "trilho" });
+    trilho.append(el("div", { class: "preench" }));
+    trilho.firstChild.style.width = `${Math.min(100, (obs / maximo) * 100)}%`;
+    if (esp != null) {
+      const marca = el("span", { class: "ref", "aria-hidden": "true" });
+      marca.style.left = `${Math.min(100, (esp / maximo) * 100)}%`;
+      trilho.append(marca);
     }
-    const contagem = new Map();
-    d.repeticoes.forEach((r) => contagem.set(r, (contagem.get(r) || 0) + 1));
-    const maximo = Math.max(1, ...contagem.values());
-    const total = d.repeticoes.length || 1;
-    [...contagem.entries()].sort((a, b) => a[0] - b[0]).forEach(([qtd, vezes]) => {
-      const linha = el("div", "linha-barra");
-      linha.appendChild(el("span", "", `${qtd} dezena${qtd === 1 ? "" : "s"}`));
-      const trilho = el("div", "trilho");
-      const preench = el("div", "preench");
-      preench.style.width = `${(vezes / maximo) * 100}%`;
-      trilho.appendChild(preench);
-      linha.appendChild(trilho);
-      linha.appendChild(el("b", "", `${Math.round((vezes / total) * 100)}%`));
-      alvo.appendChild(linha);
-    });
+    const nome = el("span", { class: "rot" }, document.createTextNode(rotulo));
+    if (rotuloExtra) nome.append(el("em", { class: "tag-top", text: rotuloExtra }));
+    const linha = el("div", { class: "linha-barra", title: titulo }, nome, trilho, el("b", { text: texto }));
+    return linha;
   }
 
-  function renderPadroes(info) {
-    const alvo = $("#barras-padroes");
-    alvo.innerHTML = "";
-    const kpi = $("#padrao-kpi");
-    kpi.innerHTML = "";
-    const checkbox = $("#filtrar-padroes");
-    const legenda = $("#legenda-padroes");
-    if (info.posicional || !info.padroes || !info.padroes.length) {
-      $("#padrao-top").textContent = "—";
-      checkbox.disabled = true;
-      checkbox.checked = false;
-      legenda.textContent = info.posicional
-        ? "Na Super Sete cada coluna sorteia um dígito: padrão de linha não se aplica."
-        : "Sem padrões de linha calculados para esta modalidade.";
-      return;
+  /* ---------- seções ---------- */
+
+  function renderizar(d) {
+    document.title = `${d.nome} — Loterias Caixa`;
+    $("#nota-loteria").textContent = d.nota || "";
+    renderAvisos(d);
+    if (d.vazio) { renderVazio(d); return; }
+    renderHero(d);
+    renderVeredito(d);
+    renderStats(d);
+    desenharFrequencia(d);
+    desenharSoma(d);
+    desenharRepeticao(d);
+    renderPadroes(d);
+    renderScore(d);
+    renderAuditoria(d);
+    prepararGerador(d);
+  }
+
+  function renderVazio(d) {
+    for (const id of ["#ultimo-bolas", "#stats", "#grafico-freq", "#histograma-soma", "#barras-repeticao", "#barras-padroes", "#score-lista", "#tabela-audit", "#tabela-backtest", "#jogos"]) {
+      limpar($(id));
     }
-    checkbox.disabled = info.aposta_min !== info.sorteadas;
-    checkbox.checked = !checkbox.disabled;
-    const top = info.padroes;
-    $("#padrao-top").textContent = top[0].padrao;
-    kpi.appendChild(el("span", "", `<b>${top[0].percentual}%</b> dos concursos`));
-    kpi.appendChild(el("span", "", `top 3 cobre <b>${info.padroes_top3_cobertura}%</b>`));
-
-    const maximo = Math.max(1, ...top.map((p) => p.quantidade));
-    top.slice(0, 5).forEach((item, indice) => {
-      const linha = el("div", "linha-barra");
-      linha.appendChild(el("span", "", item.padrao));
-      const trilho = el("div", "trilho");
-      const preench = el("div", "preench");
-      preench.style.width = `${(item.quantidade / maximo) * 100}%`;
-      if (indice < 3) preench.classList.add("padrao-ok");
-      trilho.appendChild(preench);
-      linha.appendChild(trilho);
-      linha.appendChild(el("b", "", `${item.percentual}%`));
-      alvo.appendChild(linha);
-    });
-
-    const fora = top.slice(3, 6).map((p) => `${p.padrao} (${p.percentual}%)`);
-    legenda.textContent =
-      `Distribuição das ${info.sorteadas} dezenas pelas ${info.linhas} linhas de ${info.perfil.colunas} colunas.` +
-      (fora.length ? ` Excluídos do gerador com o filtro ligado: ${fora.join(" · ")}.` : "");
+    $("#ultimo-numero").textContent = "—";
+    $("#ultimo-data").textContent = "sem dados";
+    $("#veredito-texto").textContent = `Ainda não há histórico de ${d.nome}.`;
+    $("#veredito-detalhe").textContent = "";
   }
 
-  /* ---------- score ---------- */
-
-  function quadrantesMalha(info) {
-    const linhas = Math.ceil((info.max - info.min + 1) / info.perfil.colunas);
-    const colunas = info.perfil.colunas;
-    const inicio = info.perfil.inicio;
-    const meioL = Math.ceil(linhas / 2);
-    const meioC = Math.ceil(colunas / 2);
-    const blocos = [];
-    for (const [l0, l1] of [[0, meioL], [meioL, linhas]]) {
-      for (const [c0, c1] of [[0, meioC], [meioC, colunas]]) {
-        const bloco = new Set();
-        for (let i = l0; i < l1; i++) {
-          for (let j = c0; j < c1; j++) {
-            const indice = i * colunas + j;
-            if (indice < info.max - info.min + 1) bloco.add(inicio + indice);
-          }
-        }
-        blocos.push(bloco);
+  function renderAvisos(d) {
+    const alvo = limpar($("#avisos"));
+    const msgs = [];
+    if (d.vazio) msgs.push("Sem concursos carregados para esta modalidade.");
+    else {
+      if (!d.completo) {
+        msgs.push(
+          `Histórico incompleto: ${fmt(d.n)} concursos carregados (do nº ${fmt(d.primeiro.n)} ao ${fmt(d.ultimo.n)}); ` +
+          `faltam ${fmt(d.faltantes)}. As estatísticas valem para esta janela e os intervalos de confiança são mais largos.`
+        );
+      } else if (d.n < 500) {
+        msgs.push(`Amostra pequena (${fmt(d.n)} concursos): desvios aparentes têm pouco valor estatístico.`);
       }
     }
-    return blocos;
+    for (const m of msgs) alvo.append(el("p", { class: "banner", role: "note", text: m }));
   }
 
-  function metricasJogo(info, dezenas, anterior) {
-    const valores = dezenas.map(Number);
-    const soma = valores.reduce((s, v) => s + v, 0);
-    const pares = valores.filter((v) => v % 2 === 0).length;
-    const primos = new Set(valores.filter((v) => PRIMOS.has(v))).size;
-    if (info.posicional) {
-      const contagem = new Map();
-      for (const v of valores) contagem.set(v, (contagem.get(v) || 0) + 1);
-      const repeticao = anterior ? valores.filter((v, i) => v === anterior[i]).length : 0;
-      return {
-        soma, pares, primos,
-        max_digito: Math.max(0, ...contagem.values()),
-        repeticao,
-        padrao_linhas: [...contagem.values()].sort((a, b) => b - a).join("-"),
-      };
-    }
-    const inicio = info.perfil.inicio;
-    const colunas = info.perfil.colunas;
-    const linhas = valores.map((d) => Math.floor((d - inicio) / colunas));
-    const contagem = new Map();
-    for (const linha of linhas) contagem.set(linha, (contagem.get(linha) || 0) + 1);
-    const blocos = quadrantesMalha(info);
-    const cobertos = blocos.filter((bloco) => valores.some((d) => bloco.has(d))).length;
-    const ordenado = [...valores].sort((a, b) => a - b);
-    let consecutivos = 0;
-    for (let i = 1; i < ordenado.length; i++) if (ordenado[i] === ordenado[i - 1] + 1) consecutivos++;
-    const conjuntoAnterior = new Set(anterior || []);
-    return {
-      soma, pares, primos,
-      max_linha: Math.max(0, ...contagem.values()),
-      quadrantes: cobertos,
-      consecutivos,
-      repeticao: valores.filter((d) => conjuntoAnterior.has(d)).length,
-      primeiro: ordenado[0] || 0,
-      ultimo: ordenado[ordenado.length - 1] || 0,
-      amplitude: ordenado.length ? ordenado[ordenado.length - 1] - ordenado[0] : 0,
-      padrao_linhas: [...contagem.values()].sort((a, b) => b - a).join("-"),
-    };
+  function renderHero(d) {
+    const u = d.ultimo;
+    $("#ultimo-rotulo").textContent = d.posicional ? "Último concurso · dígito por coluna" : "Último concurso";
+    $("#ultimo-numero").textContent = `#${fmt(u.n)}`;
+    $("#ultimo-data").textContent = fmtData(u.d);
+    const bolas = limpar($("#ultimo-bolas"));
+    for (const v of u.z) bolas.append(el("span", { class: `bola${d.posicional ? " azul" : ""}`, text: rotuloBola(v, d.posicional) }));
   }
 
-  function pontuarJogo(info, dezenas, anterior, perfil) {
-    perfil = perfil || info.perfil;
-    if (!perfil) return null;
-    const m = metricasJogo(info, dezenas, anterior);
-    let bloqueio = null;
-    const c = perfil.corte || {};
-    if (m.soma < c.soma[0] || m.soma > c.soma[1]) bloqueio = `SOMA(${m.soma})`;
-    else if (!perfil.posicional) {
-      if (m.primeiro > c.primeiro) bloqueio = `EXTREMOS[${m.primeiro}-${m.ultimo}]`;
-      else if (m.ultimo < c.ultimo) bloqueio = `EXTREMOS[${m.primeiro}-${m.ultimo}]`;
-      else if (m.amplitude < c.amplitude) bloqueio = `AMPLITUDE(${m.amplitude})`;
-      else if (m.max_linha > c.max_linha) bloqueio = `CONCENTRACAO_LINHA(${m.max_linha})`;
-      else if (m.quadrantes < c.quadrantes) bloqueio = `QUADRANTES(${m.quadrantes})`;
-      else if (m.consecutivos > c.consecutivos) bloqueio = `CONSECUTIVOS(${m.consecutivos})`;
-      else if (m.repeticao > c.repeticao) bloqueio = `REP_ANTERIOR(${m.repeticao})`;
-    } else if (m.repeticao > c.repeticao) {
-      bloqueio = `REP_ANTERIOR(${m.repeticao})`;
-    }
-    if (bloqueio) return { score: 0, aprovado: false, status: `REJ (0pts: ${bloqueio})`, metricas: m };
-
-    let score = 0;
-    const falhas = [];
-    for (const criterio of perfil.criterios) {
-      const valor = m[METRICA[criterio] || criterio];
-      const ideal = perfil.ideal[criterio];
-      const ok = perfil.ok[criterio];
-      if (ideal && valor >= ideal[0] && valor <= ideal[1]) score += 20;
-      else if (ok && valor >= ok[0] && valor <= ok[1]) score += 10;
-      else if (!perfil.posicional && criterio !== "pares" && criterio !== "primos") score += 5;
-      else falhas.push(`${criterio.toUpperCase()}(${valor})`);
-    }
-    const aprovado = score >= perfil.limiar;
-    return {
-      score, aprovado,
-      status: aprovado ? `APROV (${score}pts)` : `REJ (${score}pts: ${falhas.join("/") || "FORA_DAS_FAIXAS"})`,
-      metricas: m,
-    };
-  }
-
-  function renderScore(info) {
-    const perfil = info.perfil;
-    const rotulo = $("#legenda-score");
-    const kpi = $("#score-kpi");
-    const lista = $("#score-lista");
-    lista.innerHTML = "";
-    kpi.innerHTML = "";
-    if (!perfil || !info.concursos.length) {
-      rotulo.textContent = "Sem modelo de score para esta modalidade.";
+  function renderVeredito(d) {
+    const a = d.auditoria;
+    const texto = $("#veredito-texto");
+    if (!a || !a.n_testes) {
+      texto.textContent = "Histórico curto demais para auditar.";
+      $("#veredito-detalhe").textContent = "";
       return;
     }
-    kpi.appendChild(el("span", "", `limiar <b>${perfil.limiar}</b>/${perfil.maximo}`));
-    kpi.appendChild(el("span", "", `aderência <b>${perfil.aderencia}%</b>`));
-    rotulo.textContent =
-      `${perfil.criterios.length} critérios calibrados sobre ${perfil.amostra} concursos · ` +
-      `a nota de corte é o percentil histórico de ${perfil.limiar} pts.`;
+    texto.textContent = a.n_q05 === 0
+      ? `Compatível com sorteios aleatórios: nenhum dos ${a.n_testes} testes aponta desvio após a correção para múltiplas comparações.`
+      : `${a.n_q05} de ${a.n_testes} testes indicam desvio após a correção (q < 0,05). Confira a tabela de auditoria e a integridade dos dados.`;
+    $("#veredito-detalhe").textContent =
+      `Sem correção, ${a.n_p05} teste(s) têm p < 0,05; só por acaso esperaríamos ≈ ${dec(a.esperado_p05, 1)}. ` +
+      `Base: ${fmt(d.n)} concursos. Padrões como "dezenas quentes" ou "atrasadas" não resistem a essa régua.`;
+  }
 
-    const total = info.concursos.length;
-    const inicio = Math.max(0, total - 10);
-    for (let i = total - 1; i >= inicio; i--) {
-      const c = info.concursos[i];
-      const anterior = i > 0 ? info.concursos[i - 1].z : null;
-      const r = pontuarJogo(info, c.z, anterior) || { score: c.s, aprovado: !!c.a, metricas: null };
-      const linha = el("div", "score-linha");
-      linha.appendChild(el("span", "score-concurso", `#${fmt(c.n)}`));
-      linha.appendChild(el("span", `score-badge ${r.aprovado ? "ok" : "rej"}`, `${r.score} pts`));
-      const m = r.metricas;
-      const detalhe = m
-        ? `soma ${m.soma} · ${m.pares} par(es) · padrão ${c.p || "—"}`
-        : "—";
-      linha.appendChild(el("span", "score-detalhe", detalhe));
-      linha.appendChild(el("span", `score-status ${r.aprovado ? "ok" : "rej"}`, r.aprovado ? "aprovado" : "reprovado"));
-      lista.appendChild(linha);
+  function cartao(rotulo, valor, ref) {
+    return el("div", { class: "stat" }, el("span", { text: rotulo }), el("b", { text: valor }), ref ? el("small", { text: ref }) : null);
+  }
+
+  function renderStats(d) {
+    const alvo = limpar($("#stats"));
+    alvo.append(
+      cartao("Concursos", fmt(d.n)),
+      cartao("Período", `${fmtData(d.primeiro.d)} – ${fmtData(d.ultimo.d)}`),
+      cartao("Soma média", dec(d.soma.media_obs, 1), `esperada ${dec(d.soma.media_esp, 1)}`),
+      cartao(d.posicional ? "Dígitos pares" : "Pares por jogo", dec(d.pares.media_obs, 2), `esperado ${dec(d.pares.media_esp, 2)}`),
+      cartao("Dezenas", d.posicional ? `${d.sorteadas} colunas` : `${d.sorteadas} de ${d.min}–${d.max}`),
+      cartao(d.posicional ? "Colunas repetidas" : "Repetição média",
+        d.repeticao.media_obs == null ? "—" : dec(d.repeticao.media_obs, 2), `esperada ${dec(d.repeticao.media_esp, 2)}`),
+    );
+  }
+
+  function desenharFrequencia(d) {
+    if (!d || d.vazio) return;
+    const alvo = limpar($("#grafico-freq"));
+    const legenda = $("#legenda-freq");
+    const toggle = $(".toggle");
+    toggle.hidden = d.posicional;
+    $("#tabela-freq").hidden = false;
+    $("#tabela-freq").open = false;
+
+    if (d.posicional) {
+      alvo.append(heatmap(d));
+      const r = d.freq_ref;
+      legenda.textContent =
+        `Contagem de cada dígito por coluna em ${fmt(d.n)} concursos; esperado ${dec(r.esperado, 1)} por célula. ` +
+        `Azul = acima, laranja = abaixo (intensidade ∝ |z|); borda = |z| > 1,96. ` +
+        `${r.fora_banda} de ${d.sorteadas * (d.max - d.min + 1)} células fora da faixa de 95% (≈ ${dec(r.fora_banda_esperado, 0)} só por acaso).`;
+      return;
+    }
+
+    const rotulos = Array.from({ length: d.max - d.min + 1 }, (_, i) => String(d.min + i).padStart(2, "0"));
+    if (estado.metrica === "atraso") {
+      const ref = d.atraso_ref;
+      const grafico = graficoBarras({
+        valores: d.atraso, rotulos,
+        titulos: d.atraso.map((a, i) => `${rotulos[i]}: ${a} concursos sem sair · P(atraso ≥ ${a}) = ${fmtP(ref.cauda[i])}`),
+        esperado: ref.media_esperada,
+        limites: [{ valor: ref.p95, rotulo: "p95", classe: "ref-limite" }],
+        fora: (i) => d.atraso[i] >= ref.p95,
+        descricao: `Atraso de cada dezena (concursos desde a última aparição). Média esperada ${dec(ref.media_esperada, 1)}; percentil 95: ${ref.p95}.`,
+      });
+      alvo.append(grafico);
+      legenda.textContent =
+        `Concursos desde a última aparição. Linha tracejada = média esperada (${dec(ref.media_esperada, 1)}); linha pontilhada = percentil 95 (${ref.p95}). ` +
+        `${ref.acima_p95} de ${d.max - d.min + 1} dezenas estão acima do p95 (≈ ${dec(ref.acima_p95_esperado, 1)} só por acaso). ` +
+        `Dezena "atrasada" não é mais provável: a chance de sair é sempre ${d.sorteadas}/${d.max - d.min + 1}.`;
+      return;
+    }
+    const ref = d.freq_ref;
+    alvo.append(graficoBarras({
+      valores: d.freq, rotulos,
+      titulos: d.freq.map((f, i) => `${rotulos[i]}: ${f} aparições (esperado ${dec(ref.esperado, 1)})`),
+      esperado: ref.esperado, banda: ref.banda,
+      fora: (i) => d.freq[i] < ref.banda[0] || d.freq[i] > ref.banda[1],
+      descricao: `Frequência de cada dezena em ${d.n} concursos. Esperado ${dec(ref.esperado, 1)}; faixa de 95%: ${dec(ref.banda[0], 1)} a ${dec(ref.banda[1], 1)}.`,
+    }));
+    legenda.textContent =
+      `${fmt(d.n)} concursos · linha tracejada = esperado (${dec(ref.esperado, 1)}) · faixa sombreada = intervalo de 95% ao acaso (${dec(ref.banda[0], 1)}–${dec(ref.banda[1], 1)}). ` +
+      `${ref.fora_banda} de ${d.max - d.min + 1} dezenas ficam fora (≈ ${dec(ref.fora_banda_esperado, 1)} só por acaso).`;
+  }
+
+  function montarTabelaFrequencia(d) {
+    const alvo = limpar($("#tabela-freq-corpo"));
+    if (!d || d.vazio) return;
+    const tabela = el("table", { class: "tabela" });
+    const cab = el("tr");
+    if (d.posicional) {
+      cab.append(el("th", { scope: "col", text: "Dígito" }));
+      d.colunas.forEach((_, i) => cab.append(el("th", { scope: "col", text: `C${i + 1}` })));
+      tabela.append(el("thead", {}, cab));
+      const corpo = el("tbody");
+      for (let dig = d.min; dig <= d.max; dig++) {
+        const tr = el("tr", {}, el("th", { scope: "row", text: String(dig) }));
+        d.colunas.forEach((c) => tr.append(el("td", { text: String(c[dig - d.min]) })));
+        corpo.append(tr);
+      }
+      tabela.append(corpo);
+    } else {
+      for (const t of ["Dezena", "Frequência", "Atraso", "P(atraso ≥ observado)"]) cab.append(el("th", { scope: "col", text: t }));
+      tabela.append(el("thead", {}, cab));
+      const corpo = el("tbody");
+      d.freq.forEach((f, i) => corpo.append(el("tr", {},
+        el("th", { scope: "row", text: String(d.min + i).padStart(2, "0") }),
+        el("td", { text: String(f) }), el("td", { text: String(d.atraso[i]) }), el("td", { text: fmtP(d.atraso_ref.cauda[i]) }))));
+      tabela.append(corpo);
+    }
+    alvo.append(tabela);
+  }
+
+  function desenharSoma(d) {
+    const s = d.soma;
+    limpar($("#histograma-soma")).append(graficoHistograma(s.bins,
+      `Distribuição da soma das dezenas: barras observadas, pontos esperados. Média observada ${s.media_obs}, esperada ${s.media_esp}.`));
+    $("#legenda-soma").textContent =
+      `Barras = observado; pontos = esperado exato (n × P). Média ${dec(s.media_obs, 1)} (esperada ${dec(s.media_esp, 1)}); ` +
+      `desvio-padrão ${dec(s.dp_obs, 1)} (esperado ${dec(s.dp_esp, 1)}). Faixas de ${s.bins[0].fim - s.bins[0].ini + 1} unidades.`;
+  }
+
+  function desenharRepeticao(d) {
+    const r = d.repeticao;
+    const alvo = limpar($("#barras-repeticao"));
+    const total = Math.max(1, r.pares);
+    const obsPct = r.obs.map((v) => (100 * v) / total);
+    const espPct = r.esp.map((v) => (100 * v) / total);
+    const maximo = Math.max(1, ...obsPct, ...espPct) * 1.05;
+    r.obs.forEach((_, i) => {
+      if (obsPct[i] === 0 && espPct[i] < 0.05) return; // oculta caudas vazias
+      const rotulo = d.posicional ? `${i} coluna${i === 1 ? "" : "s"}` : `${i} dezena${i === 1 ? "" : "s"}`;
+      alvo.append(linhaBarra({
+        rotulo, obs: obsPct[i], esp: espPct[i], maximo,
+        texto: `${pct(obsPct[i])} (esp. ${pct(espPct[i])})`,
+        titulo: `${r.obs[i]} de ${r.pares} pares de concursos · esperado ${dec(r.esp[i], 1)}`,
+      }));
+    });
+    $("#legenda-rep").textContent = d.posicional
+      ? `Colunas cujo dígito repete o do concurso anterior. Barra = observado; traço = esperado (binomial, p = 0,1). Média ${dec(r.media_obs, 2)} (esperada ${dec(r.media_esp, 2)}).`
+      : `Dezenas que repetem do concurso anterior. Barra = observado; traço = esperado (hipergeométrica). Média ${dec(r.media_obs, 2)} (esperada ${dec(r.media_esp, 2)}).`;
+  }
+
+  function renderPadroes(d) {
+    const alvo = limpar($("#barras-padroes"));
+    const kpi = limpar($("#padrao-kpi"));
+    const legenda = $("#legenda-padroes");
+    if (d.posicional || !d.padroes || !d.padroes.length) {
+      legenda.textContent = "Na Super Sete cada coluna sorteia um dígito: padrão de linha não se aplica.";
+      return;
+    }
+    kpi.append(el("span", { text: `${fmt(d.padroes_distintos)} padrões possíveis` }));
+    const maximo = Math.max(1, ...d.padroes.map((p) => Math.max(p.percentual, p.esperado_pct))) * 1.05;
+    d.padroes.forEach((p, i) => {
+      alvo.append(linhaBarra({
+        rotulo: p.padrao, rotuloExtra: i < 3 ? "top 3" : "", obs: p.percentual, esp: p.esperado_pct, maximo,
+        texto: `${pct(p.percentual)} (esp. ${pct(p.esperado_pct)})`,
+        titulo: `${p.quantidade} concursos · z = ${dec(p.z, 2)}`,
+      }));
+    });
+    legenda.textContent =
+      `Distribuição das ${d.sorteadas} dezenas pelas ${d.linhas} linhas de ${d.colunas_malha} colunas. Barra = observado; traço = esperado ao acaso. ` +
+      `Um padrão é frequente porque ocupa mais combinações do espaço, não porque o sorteio o prefira: o top 3 cobre ${pct(d.padroes_top3_observado_pct)} dos concursos ` +
+      `contra ${pct(d.padroes_top3_esperado_pct)} esperados.`;
+  }
+
+  function renderScore(d) {
+    const perfil = d.perfil;
+    const kpi = limpar($("#score-kpi"));
+    const lista = limpar($("#score-lista"));
+    const legenda = $("#legenda-score");
+    if (!perfil) { legenda.textContent = "Sem modelo de score para esta modalidade."; return; }
+    kpi.append(
+      el("span", {}, document.createTextNode("limiar "), el("b", { text: String(perfil.limiar) }), document.createTextNode(`/${perfil.maximo}`)),
+      el("span", {}, document.createTextNode("ao acaso "), el("b", { text: pct(perfil.taxa_nominal) })),
+    );
+    let compat = "";
+    if (perfil.aderencia_hist != null && perfil.aderencia_ic) {
+      kpi.append(el("span", {}, document.createTextNode("observado "), el("b", { text: pct(perfil.aderencia_hist) })));
+      const [lo, hi] = perfil.aderencia_ic;
+      const dentro = perfil.taxa_nominal >= lo && perfil.taxa_nominal <= hi;
+      compat = ` Taxa de jogos típicos no histórico: ${pct(perfil.aderencia_hist)} (IC 95%: ${pct(lo)}–${pct(hi)}, n = ${fmt(perfil.amostra_hist)}) — ` +
+        (dentro ? "compatível com a taxa esperada ao acaso." : "fora do intervalo esperado ao acaso; vale checar os dados.");
+    }
+    legenda.textContent =
+      `O score mede tipicidade (quão comum é o jogo entre sorteios aleatórios), não qualidade nem chance de acerto. ` +
+      `Faixas e limiar vêm de ${fmt(perfil.amostra_nulo)} sorteios simulados sob o acaso, sem ajuste ao histórico.` + compat;
+
+    for (const c of [...d.recentes].reverse()) {
+      const tipico = Boolean(c.a);
+      lista.append(el("div", { class: "score-linha" },
+        el("span", { class: "score-concurso", text: `#${fmt(c.n)}` }),
+        el("span", { class: `score-badge ${tipico ? "ok" : "neutro"}`, text: `${c.s} pts` }),
+        el("span", { class: "score-detalhe", text: c.p ? `padrão ${c.p}` : `soma ${c.z.reduce((s, v) => s + v, 0)}` }),
+        el("span", { class: "score-status", text: tipico ? "típico" : "atípico" }),
+      ));
+    }
+  }
+
+  function tabela(colunas, linhas) {
+    const t = el("table", { class: "tabela" });
+    const cab = el("tr");
+    for (const c of colunas) cab.append(el("th", { scope: "col", text: c }));
+    t.append(el("thead", {}, cab));
+    const corpo = el("tbody");
+    for (const linha of linhas) {
+      const tr = el("tr");
+      linha.forEach((cel, i) => tr.append(el(i === 0 ? "th" : "td", i === 0 ? { scope: "row", text: String(cel) } : { text: String(cel) })));
+      corpo.append(tr);
+    }
+    t.append(corpo);
+    return t;
+  }
+
+  function renderAuditoria(d) {
+    const a = d.auditoria;
+    const alvoTestes = limpar($("#tabela-audit"));
+    if (a && a.testes.length) {
+      alvoTestes.append(tabela(
+        ["Teste", "Estatística", "gl", "p", "q (BH)", "Leitura"],
+        a.testes.map((t) => [
+          t.rotulo,
+          t.estat != null ? dec(t.estat, 2) : t.z != null ? `z = ${dec(t.z, 2)}` : "—",
+          t.gl != null ? String(t.gl) : "—",
+          fmtP(t.p), fmtP(t.q),
+          t.q < 0.05 ? "desvio" : "compatível com o acaso",
+        ]),
+      ));
+      $("#legenda-audit").textContent =
+        `Todos os testes assumem sorteios uniformes e independentes. p sem correção; q = correção de Benjamini–Hochberg para ${a.n_testes} testes ` +
+        `(sem correção, ≈ ${dec(a.esperado_p05, 1)} deles teriam p < 0,05 só por acaso). A uniformidade usa o qui-quadrado correto para sorteio sem reposição.`;
+    } else {
+      $("#legenda-audit").textContent = "Histórico curto demais para auditar.";
+    }
+
+    const bt = d.backtest;
+    const alvoBt = limpar($("#tabela-backtest"));
+    const legBt = $("#legenda-backtest");
+    if (!bt) {
+      legBt.textContent = "Backtest indisponível: são necessários ao menos 31 concursos.";
+    } else {
+      const nomes = { aleatorio: "Aleatório (referência)", padroes_top3: "Só padrões top 3", aprovado: "Só jogos típicos" };
+      const linhas = Object.entries(bt.estrategias).map(([nome, e]) => [
+        nomes[nome] || nome,
+        `${dec(e.media, 3)} ± ${dec(e.erro_padrao, 3)}`,
+        dec(bt.media_teorica, 3),
+        dec(e.z_vs_teorico, 2),
+        e.dif_vs_aleatorio != null ? `${e.dif_vs_aleatorio >= 0 ? "+" : ""}${dec(e.dif_vs_aleatorio, 3)} ± ${dec(e.dif_erro_padrao, 3)}` : "—",
+        e.dif_p != null ? fmtP(e.dif_p) : "—",
+      ]);
+      alvoBt.append(tabela(["Estratégia", "Acertos por jogo", "Esperado", "z", "Δ vs aleatório", "p (Δ)"], linhas));
+      const detectou = Object.values(bt.estrategias).some((e) => e.dif_p != null && e.dif_p < 0.05);
+      legBt.textContent =
+        `${fmt(bt.concursos)} concursos × ${bt.jogos_por_concurso} jogos de ${bt.tamanho_jogo} dezenas, sem olhar o futuro (cada jogo só conhece concursos anteriores). ` +
+        `Todo jogo tem o mesmo nº esperado de acertos (${dec(bt.media_teorica, 3)}). ` +
+        (detectou
+          ? "Há uma diferença com p < 0,05; com poucos testes isso ainda pode ser acaso — repita com mais concursos."
+          : "Nenhuma estratégia difere do acaso (p ≥ 0,05), como a teoria prevê.");
+    }
+
+    const r = d.rateio;
+    const bloco = $("#bloco-rateio");
+    bloco.hidden = !(r && r.disponivel);
+    if (r && r.disponivel) {
+      limpar($("#tabela-rateio")).append(tabela(
+        ["Dezenas ≤ 31 no resultado", "Concursos", "Média de ganhadores (1ª faixa)"],
+        r.grupos.map((g) => [g.dezenas_ate_31, fmt(g.concursos), dec(g.media_ganhadores, 2)]),
+      ));
+      const s = r.spearman;
+      $("#legenda-rateio").textContent =
+        `${fmt(r.n)} concursos com ganhadores informados (esperado ≈ ${dec(r.dezenas_ate_31_esperado, 1)} dezenas ≤ 31). ` +
+        (s ? `Correlação de Spearman = ${dec(s.rho, 3)} (p = ${fmtP(s.p)}). ` : "") +
+        `Se resultados com mais datas tiverem mais ganhadores, evitar combinações de datas aumenta o prêmio esperado de quem acerta, sem mudar a chance de acertar. ` +
+        `Limitação: o volume de apostas (concursos acumulados) não está controlado.`;
     }
   }
 
   /* ---------- gerador ---------- */
 
-  const embaralhar = (lista) => {
-    const copia = [...lista];
-    for (let i = copia.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [copia[i], copia[j]] = [copia[j], copia[i]];
-    }
-    return copia;
-  };
+  function perfilDoJogo(d) { return d.perfil_aposta || d.perfil; }
 
-  function sorteio(info, qtd) {
-    if (info.posicional) return Array.from({ length: info.sorteadas }, () => Math.floor(Math.random() * 10));
-    const universo = [];
-    for (let d = info.min; d <= info.max; d++) universo.push(d);
-    return embaralhar(universo).slice(0, qtd || info.aposta_min || info.sorteadas).sort((a, b) => a - b);
-  }
-
-  function padraoDoJogo(info, dezenas) {
-    const perfil = info.perfil;
-    if (!perfil) return "—";
-    const contagem = new Map();
-    for (const d of dezenas) {
-      const linha = Math.floor((d - perfil.inicio) / perfil.colunas);
-      contagem.set(linha, (contagem.get(linha) || 0) + 1);
-    }
-    return [...contagem.values()].sort((a, b) => b - a).join("-");
-  }
-
-  function sorteioComPadrao(info) {
-    const tabela = info.padroes.slice(0, 3);
-    const total = tabela.reduce((s, p) => s + p.quantidade, 0);
-    let sorte = Math.random() * total;
-    let escolha = tabela[0];
-    for (const item of tabela) {
-      sorte -= item.quantidade;
-      if (sorte <= 0) { escolha = item; break; }
-    }
-    const contagens = escolha.padrao.split("-").map(Number);
-    const perfil = info.perfil;
-    const linhas = [];
-    for (let i = 0; i < info.linhas; i++) {
-      const começo = perfil.inicio + i * perfil.colunas;
-      const fim = Math.min(começo + perfil.colunas - 1, info.max);
-      if (começo <= fim) {
-        const numeros = [];
-        for (let d = começo; d <= fim; d++) numeros.push(d);
-        linhas.push(numeros);
-      }
-    }
-    for (let tentativa = 0; tentativa < 50; tentativa++) {
-      const usadas = new Set();
-      const resultado = [];
-      let ok = true;
-      for (const n of contagens) {
-        const candidatos = [];
-        linhas.forEach((nums, indice) => {
-          if (!usadas.has(indice) && nums.length >= n) candidatos.push(indice);
-        });
-        if (!candidatos.length) { ok = false; break; }
-        const indice = candidatos[Math.floor(Math.random() * candidatos.length)];
-        usadas.add(indice);
-        resultado.push(...embaralhar(linhas[indice]).slice(0, n));
-      }
-      if (ok) return resultado.sort((a, b) => a - b);
-    }
-    return sorteio(info, info.sorteadas);
+  function prepararGerador(d) {
+    const tamanho = d.aposta_min;
+    const select = $("#estrategia");
+    const opPadroes = select.querySelector('option[value="padroes"]');
+    const padroesOk = !d.posicional && d.padroes_top3 && d.padroes_top3.length > 0 && tamanho === d.sorteadas;
+    opPadroes.disabled = !padroesOk;
+    if (!padroesOk && select.value === "padroes") select.value = "aleatorio";
+    if (padroesOk && !estado.escolheuMetodo) select.value = "padroes";
+    select.onchange = () => { estado.escolheuMetodo = true; };
+    const elegivel = G.elegivelEvitarDatas(d);
+    $("#rotulo-evitar-datas").hidden = !elegivel;
+    if (!elegivel) $("#evitar-datas").checked = false;
+    limpar($("#jogos"));
+    $("#copiar").hidden = true;
+    estado.ultimosJogos = [];
+    const chance = G.umEm(d, tamanho);
+    $("#legenda-gerador").textContent =
+      `Jogo de ${tamanho} dezenas. Chance de acertar todas as dezenas sorteadas: 1 em ${chance.toLocaleString("pt-BR")} — igual para qualquer combinação. ` +
+      `Os filtros usam amostragem com rejeição (uniforme dentro das combinações aceitas); "evitar datas" é só uma heurística de rateio.`;
   }
 
   function gerarJogos() {
-    const info = estado.dados.loterias[estado.atual];
+    const d = estado.dados;
+    if (!d || d.vazio) return;
     const quantidade = Math.min(20, Math.max(1, Number($("#qtd").value) || 1));
-    const alvo = $("#jogos");
-    alvo.innerHTML = "";
-    const anterior = info.concursos.length ? info.concursos[info.concursos.length - 1].z : null;
-    const checkbox = $("#filtrar-padroes");
-    const usarPadroes = (
-      checkbox.checked && !checkbox.disabled
-      && !info.posicional && info.padroes && info.padroes.length
-    );
-    const perfil = usarPadroes ? info.perfil : (info.perfil_aposta || info.perfil);
-    const top3 = new Set((info.padroes || []).slice(0, 3).map((p) => p.padrao));
-    for (let i = 0; i < quantidade; i++) {
-      const dezenas = usarPadroes ? sorteioComPadrao(info) : sorteio(info);
+    $("#qtd").value = String(quantidade);
+    const perfil = perfilDoJogo(d);
+    const opcoes = {
+      estrategia: $("#estrategia").value,
+      evitarDatas: $("#evitar-datas").checked,
+      anterior: d.ultimo.z,
+      perfil,
+      tamanho: d.aposta_min,
+    };
+    const { jogos, esgotou } = G.gerarJogos(d, quantidade, opcoes);
+    const alvo = limpar($("#jogos"));
+    const top3 = new Set(d.padroes_top3 || []);
+    estado.ultimosJogos = jogos.map((j) => j.dezenas);
+
+    for (const { dezenas } of jogos) {
       const soma = dezenas.reduce((s, v) => s + v, 0);
       const pares = dezenas.filter((v) => v % 2 === 0).length;
-      const linha = el("div", "jogo");
-      linha.appendChild(bolas(dezenas, info.posicional));
-      linha.appendChild(el("span", "tag", `soma ${soma} · ${pares} par(es)`));
-      const padrao = padraoDoJogo(info, dezenas);
-      const classePadrao = usarPadroes || top3.has(padrao) ? " ok" : " fora";
-      linha.appendChild(el("span", `score-badge padrao-tag${classePadrao}`, `padrão ${padrao}`));
-      const r = pontuarJogo(info, dezenas, anterior, perfil);
-      if (r) {
-        linha.appendChild(
-          el("span", `score-badge ${r.aprovado ? "ok" : "rej"}`, `${r.score} pts`)
-        );
-        linha.title = r.status;
+      const linha = el("div", { class: "jogo" });
+      const bolas = el("div", { class: "bolas" });
+      for (const v of dezenas) bolas.append(el("span", { class: `bola${d.posicional ? " azul" : ""}`, text: rotuloBola(v, d.posicional) }));
+      linha.append(bolas, el("span", { class: "tag", text: `soma ${soma} · ${pares} par(es)` }));
+      if (!d.posicional) {
+        const padrao = G.padraoLinhas(perfil, dezenas);
+        const nota = d.aposta_min === d.sorteadas ? (top3.has(padrao) ? " · top 3" : " · fora do top 3") : "";
+        linha.append(el("span", { class: "score-badge neutro", text: `padrão ${padrao}${nota}` }));
       }
-      alvo.appendChild(linha);
+      const r = G.pontuarJogo(perfil, dezenas, d.ultimo.z);
+      linha.append(el("span", { class: `score-badge ${r.aprovado ? "ok" : "neutro"}`, title: r.status, text: `${r.score} pts · ${r.aprovado ? "típico" : "atípico"}` }));
+      alvo.append(linha);
+    }
+    $("#copiar").hidden = false;
+    if (esgotou) {
+      alvo.append(el("p", { class: "banner", role: "note", text: "Os filtros escolhidos são restritivos demais: alguns jogos foram gerados sem satisfazê-los." }));
+    }
+  }
+
+  async function copiarJogos() {
+    const d = estado.dados;
+    const texto = estado.ultimosJogos.map((j) => j.map((v) => rotuloBola(v, d.posicional)).join(d.posicional ? " " : " ")).join("\n");
+    try {
+      await navigator.clipboard.writeText(texto);
+      mostrarEstado("Jogos copiados.");
+      setTimeout(() => { if ($("#estado").textContent === "Jogos copiados.") mostrarEstado(""); }, 2500);
+    } catch (_) {
+      mostrarEstado("Não foi possível copiar automaticamente; selecione os jogos manualmente.", { erro: true });
     }
   }
 

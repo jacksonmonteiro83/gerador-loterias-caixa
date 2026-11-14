@@ -166,10 +166,16 @@ def atualizar_loteria(
     caminho: str | Path | None = None,
     maximo: int | None = None,
     offline: bool = False,
+    completo: bool = False,
 ) -> dict:
     """Atualiza o histórico de uma modalidade.
 
-    Fluxo: inicializa o banco, descobre o último concurso local e tenta
+    Com ``completo=True`` preenche **todos** os concursos que faltam entre o 1º e
+    o último publicado (*backfill*), inclusive lacunas no meio, respeitando
+    ``maximo`` como orçamento por execução; falhas pontuais não bloqueiam o
+    restante e a próxima execução continua de onde parou.
+
+    Fluxo padrão: inicializa o banco, descobre o último concurso local e tenta
     baixar apenas os concursos novos. Se ``offline`` for verdadeiro (ou se
     houver qualquer falha de rede), usa o gerador sintético determinístico,
     sinalizando a fonte no retorno. Nunca propaga exceção de rede.
@@ -204,17 +210,30 @@ def atualizar_loteria(
         if remoto is None:
             raise RuntimeError("não foi possível descobrir o último concurso na Caixa")
 
-        if ultimo_local is None:
+        registros: list[dict] = []
+        if completo:
+            locais = db.numeros_concursos(chave, caminho)
+            faltantes = [n for n in range(1, int(remoto) + 1) if n not in locais]
+            registros, falhas = scraper.baixar_numeros(slug, faltantes, limite=maximo)
+            if falhas:
+                logger.warning(
+                    "%s: %d concurso(s) indisponível(is) nesta execução (ex.: %s)",
+                    chave, len(falhas), falhas[:5],
+                )
+            if not registros and not locais and faltantes:
+                raise RuntimeError("nenhum concurso pôde ser baixado da Caixa")
+            de, ate = 1, 0  # já baixado; pula o ramo incremental abaixo
+        elif ultimo_local is None:
             limite = maximo if maximo is not None else QUANTIDADE_PADRAO
             de = max(1, int(remoto) - int(limite) + 1)
+            ate = int(remoto)
         else:
             de = int(ultimo_local) + 1
-        ate = int(remoto)
-        if maximo is not None:
-            ate = min(ate, de + maximo - 1)
+            ate = int(remoto)
+            if maximo is not None:
+                ate = min(ate, de + maximo - 1)
 
-        registros: list[dict] = []
-        if de <= ate:
+        if not completo and de <= ate:
             registros = scraper.baixar_intervalo(slug, de, ate)
         if registros:
             antes = db.contar_concursos(chave, caminho)
@@ -238,14 +257,18 @@ def atualizar_loteria(
 
 
 def atualizar_todas(
-    caminho: str | Path | None = None, offline: bool = False
+    caminho: str | Path | None = None,
+    offline: bool = False,
+    completo: bool = False,
+    maximo: int | None = None,
 ) -> dict:
     """Atualiza as oito modalidades, continuando mesmo se uma falhar."""
     resultados: dict[str, dict] = {}
     for chave in CATALOGO:
         try:
             resultados[chave] = atualizar_loteria(
-                chave, caminho=caminho, offline=offline
+                chave, caminho=caminho, offline=offline,
+                completo=completo, maximo=maximo,
             )
         except Exception as exc:
             logger.exception("Falha inesperada ao atualizar %s", chave)

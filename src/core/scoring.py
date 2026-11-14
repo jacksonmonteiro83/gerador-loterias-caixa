@@ -8,18 +8,27 @@ histórico real de cada modalidade, em vez de valores fixos pensados só para
 Cada jogo recebe de 0 a 140 pontos (7 critérios de 20) e é aprovado quando
 alcança o limiar da modalidade. Modalidades posicionais (Super Sete) usam
 critérios próprios de coluna e escala de 100 pontos.
+
+Interpretação estatística: o score mede **tipicidade** (quão comum é o jogo
+entre sorteios aleatórios), não qualidade nem chance de acerto, já que todo
+jogo válido tem a mesma probabilidade. Por isso, a calibração padrão
+(``fonte="nulo"``) usa uma amostra grande de sorteios *simulados sob a hipótese
+nula* (uniforme), em vez de ajustar faixas a algumas dezenas de concursos
+históricos (o que seria ajuste ao ruído). O histórico real entra só como
+auditoria: a taxa de aprovação observada deve ser compatível com a taxa
+nominal esperada ao acaso (``taxa_nominal``), com intervalo de Wilson.
 """
 
 from __future__ import annotations
 
+import copy
 import random
 from dataclasses import asdict, dataclass, field
-from statistics import median
 from typing import Any, Sequence
 
 import pandas as pd
 
-from . import filters
+from . import filters, nulo
 from .models import LotterySpec
 
 __all__ = [
@@ -46,6 +55,10 @@ CRITERIOS_CONJUNTO = (
 CRITERIOS_POSICIONAL = ("soma", "pares", "primos", "repeticao", "concentracao")
 
 _METRICA = {"linhas": "max_linha", "concentracao": "max_digito"}
+#: Tamanho da amostra simulada (hipótese nula) usada na calibração padrão.
+AMOSTRA_NULO = 4000
+SEMENTE_NULO = 20260101
+
 _PONTOS_IDEAL = 20
 _PONTOS_OK = 10
 _PONTOS_FRACO = 5
@@ -231,6 +244,16 @@ class PerfilScore:
     ok: dict[str, tuple[float, float]] = field(default_factory=dict)
     corte: dict[str, Any] = field(default_factory=dict)
     criterios: tuple[str, ...] = CRITERIOS_CONJUNTO
+    #: "nulo" (simulação sob H0, padrão) ou "historico" (faixas ajustadas ao histórico)
+    fonte: str = "historico"
+    #: taxa de aprovação esperada ao acaso (%), medida na amostra simulada
+    taxa_nominal: float = 0.0
+    #: tamanho da amostra simulada usada na calibração (0 quando fonte="historico")
+    amostra_nulo: int = 0
+    #: aprovação observada no histórico real (%), com IC de Wilson de 95%
+    aderencia_hist: float | None = None
+    aderencia_ic: tuple[float, float] | None = None
+    amostra_hist: int = 0
 
     def como_dict(self) -> dict:
         """Versão serializável (usada pelo dashboard)."""
@@ -238,6 +261,9 @@ class PerfilScore:
         dados["ideal"] = {k: list(v) for k, v in self.ideal.items()}
         dados["ok"] = {k: list(v) for k, v in self.ok.items()}
         dados["criterios"] = list(self.criterios)
+        dados["aderencia_ic"] = (
+            list(self.aderencia_ic) if self.aderencia_ic is not None else None
+        )
         return dados
 
     # ------------------------------------------------------------------ score
@@ -540,34 +566,87 @@ def _calibrar_posicional(
     return perfil
 
 
+def _sorteios_nulos(spec: LotterySpec, alvo: int, quantidade: int, semente: int):
+    """Sorteios uniformes simulados (hipótese nula), reprodutíveis."""
+    rng = random.Random(semente)
+    if spec.tipo == "posicional":
+        return [
+            [rng.randrange(spec.universo) for _ in range(alvo)]
+            for _ in range(quantidade)
+        ]
+    base = range(spec.inicio, spec.inicio + spec.universo)
+    return [sorted(rng.sample(base, alvo)) for _ in range(quantidade)]
+
+
+_CACHE_NULO: dict[tuple, PerfilScore] = {}
+
+
+def _perfil_nulo(spec: LotterySpec, alvo: int) -> PerfilScore:
+    """Perfil calibrado só com sorteios simulados (independe do histórico)."""
+    chave = (
+        spec.key, spec.tipo, spec.universo, spec.sorteadas,
+        spec.colunas, spec.inicio, alvo, AMOSTRA_NULO, SEMENTE_NULO,
+    )
+    if chave not in _CACHE_NULO:
+        draws = _sorteios_nulos(spec, alvo, AMOSTRA_NULO, SEMENTE_NULO)
+        if spec.tipo == "posicional":
+            perfil = _calibrar_posicional(spec, draws)
+        else:
+            perfil = _calibrar_conjunto(spec, draws)
+        perfil.fonte = "nulo"
+        perfil.taxa_nominal = perfil.aderencia
+        perfil.amostra_nulo = perfil.amostra
+        _CACHE_NULO[chave] = perfil
+    # cópia: o perfil é mutável e quem chama pode alterar faixas/cortes
+    return copy.deepcopy(_CACHE_NULO[chave])
+
+
+def _auditar_historico(perfil: PerfilScore, draws: list[list[int]]) -> None:
+    """Anexa ao perfil a taxa de aprovação observada no histórico real."""
+    pares = list(zip(draws, draws[1:]))
+    if not pares:
+        return
+    aprovados = sum(
+        1 for anterior, atual in pares if perfil.avaliar(atual, anterior)["aprovado"]
+    )
+    n = len(pares)
+    baixo, alto = nulo.wilson(aprovados, n)
+    perfil.amostra_hist = n
+    perfil.aderencia_hist = round(100 * aprovados / n, 1)
+    perfil.aderencia_ic = (round(100 * baixo, 1), round(100 * alto, 1))
+    perfil.aderencia = perfil.aderencia_hist
+    perfil.amostra = n
+
+
 def calibrar(
     spec: LotterySpec,
     historico: pd.DataFrame | None,
     qtd: int | None = None,
+    fonte: str = "nulo",
 ) -> PerfilScore:
-    """Calibra o modelo sobre o histórico; sem histórico usa amostra teórica.
+    """Calibra o modelo de score para um tamanho de jogo.
+
+    ``fonte="nulo"`` (padrão): faixas e limiar vêm de sorteios simulados sob a
+    hipótese nula; o histórico só alimenta a auditoria (``aderencia_hist``).
+    ``fonte="historico"``: comportamento anterior, faixas ajustadas ao histórico
+    (sem histórico, cai numa amostra sintética de 300 sorteios).
 
     ``qtd`` é o tamanho do jogo que será pontuado (na Lotomania a aposta tem 50
     dezenas, mas o sorteio tem 20; os dois usam faixas próprias).
     """
+    if fonte not in ("nulo", "historico"):
+        raise ValueError("fonte deve ser 'nulo' ou 'historico'")
     draws = _draws(historico)
     alvo = int(qtd) if qtd else (len(draws[0]) if draws else int(spec.sorteadas))
+
+    if fonte == "nulo":
+        perfil = _perfil_nulo(spec, alvo)
+        if draws and len(draws[0]) == alvo:
+            _auditar_historico(perfil, draws)
+        return perfil
+
     if not draws or len(draws[0]) != alvo:
-        rng = random.Random(0)
-        if spec.tipo == "posicional":
-            draws = [
-                [rng.randrange(spec.universo) for _ in range(alvo)]
-                for _ in range(300)
-            ]
-        else:
-            draws = [
-                sorted(
-                    rng.sample(
-                        range(spec.inicio, spec.inicio + spec.universo), alvo
-                    )
-                )
-                for _ in range(300)
-            ]
+        draws = _sorteios_nulos(spec, alvo, 300, 0)
     if spec.tipo == "posicional":
         return _calibrar_posicional(spec, draws)
     return _calibrar_conjunto(spec, draws)

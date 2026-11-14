@@ -2,3 +2,4 @@ pandas>=2.0
 numpy>=1.24
 requests>=2.31
 pytest>=8.0
+scipy>=1.11  # só nos testes (confere distribuições e testes estatísticos)

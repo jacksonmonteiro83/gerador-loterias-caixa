@@ -3,7 +3,8 @@
 Uso:
     python main.py                      # demo das 8 modalidades (offline-safe)
     python main.py --loteria mega-sena --jogos 5 --seed 42
-    python main.py --atualizar          # baixa o histórico da Caixa para o SQLite
+    python main.py --atualizar          # baixa concursos novos (incremental)
+    python main.py --atualizar --completo   # preenche o histórico inteiro (backfill)
     python main.py --regras             # tabela de regras oficiais
     python main.py --json               # saída estruturada
 
@@ -22,7 +23,8 @@ import pandas as pd
 
 from src.core import scoring
 from src.core.models import FiltroConfig, LotteryConfig, ValidacaoError
-from src.etl.loader import gerador_sintetico
+from src.etl import historico as historico_repo
+from src.etl.loader import CATALOGO, gerador_sintetico
 from src.etl.loader import atualizar_todas as etl_atualizar_todas
 from src.loterias.registry import criar, get_loteria, listar_loterias
 from src.utils.db import DEFAULT_DB, carregar_df, contar_concursos
@@ -271,9 +273,28 @@ def acao_regras() -> int:
     return 0
 
 
-def acao_atualizar(caminho: Path, offline: bool) -> int:
+def acao_atualizar(
+    caminho: Path,
+    offline: bool,
+    completo: bool = False,
+    maximo: int | None = None,
+    diretorio_historico: Path | None = None,
+) -> int:
     print(f"Atualizando histórico em {caminho} ...")
-    resultados = etl_atualizar_todas(caminho=caminho, offline=offline)
+    chaves = list(CATALOGO)
+    if not offline:
+        # O SQLite é descartável (nasce vazio no CI): o histórico acumulado vive
+        # em data/historico/*.jsonl e é recarregado antes de baixar só o que falta.
+        carregados = historico_repo.hidratar(chaves, caminho, diretorio_historico)
+        print(f"Histórico versionado carregado: {sum(carregados.values())} concursos")
+    resultados = etl_atualizar_todas(
+        caminho=caminho, offline=offline, completo=completo, maximo=maximo
+    )
+    if not offline:
+        # só persiste modalidades que vieram da Caixa: dados sintéticos de
+        # fallback nunca entram no histórico versionado
+        reais = [k for k, r in resultados.items() if r.get("fonte") == "caixa"]
+        historico_repo.exportar(reais, caminho, diretorio_historico)
     print(f"\n{'Modalidade':<13} {'Novos':>6} {'Último':>7} {'Total':>6}  Fonte")
     print("-" * 62)
     for key, res in resultados.items():
@@ -549,6 +570,12 @@ def montar_parser() -> argparse.ArgumentParser:
                    help="não usa o SQLite; histórico sintético")
     p.add_argument("--db", type=Path, default=DEFAULT_DB, help="caminho do SQLite")
     p.add_argument("--atualizar", action="store_true", help="atualiza o histórico (ETL)")
+    p.add_argument("--completo", action="store_true",
+                   help="com --atualizar: preenche todos os concursos que faltam (backfill)")
+    p.add_argument("--maximo", type=int, default=None,
+                   help="com --atualizar: máximo de concursos baixados por modalidade")
+    p.add_argument("--historico-dir", type=Path, default=None,
+                   help="pasta dos arquivos .jsonl (padrão: data/historico)")
     p.add_argument("--regras", action="store_true", help="mostra as regras oficiais")
     p.add_argument("--json", action="store_true", help="imprime o resultado em JSON")
     p.add_argument("--sem-restricoes", action="store_true",
@@ -597,7 +624,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.regras:
             return acao_regras()
         if args.atualizar:
-            return acao_atualizar(args.db, args.offline)
+            return acao_atualizar(
+                args.db, args.offline, completo=args.completo,
+                maximo=args.maximo, diretorio_historico=args.historico_dir,
+            )
         if args.score:
             return acao_score(args)
         return acao_demo(args)

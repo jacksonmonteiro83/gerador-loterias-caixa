@@ -389,6 +389,22 @@ def ultimo_concurso(
     return int(row[0])
 
 
+def numeros_concursos(
+    loteria: str, caminho: str | Path | None = None
+) -> set[int]:
+    """Conjunto dos números de concurso já gravados para a modalidade."""
+    init_db(caminho)
+    con = conectar(caminho)
+    try:
+        rows = con.execute(
+            "SELECT concurso FROM concursos WHERE loteria = ?",
+            (str(loteria).strip(),),
+        ).fetchall()
+    finally:
+        con.close()
+    return {int(row[0]) for row in rows}
+
+
 def contar_concursos(loteria: str, caminho: str | Path | None = None) -> int:
     """Conta quantos concursos existem para a modalidade informada."""
     init_db(caminho)

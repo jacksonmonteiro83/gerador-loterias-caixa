@@ -166,15 +166,15 @@ valores fixos pensados para 1–80 com 7 dezenas.
 - Antes da pontuação há **blocos rígidos** (soma fora da faixa histórica,
   extremos, amplitude, linha concentrada, quadrantes vazios, consecutivos e
   repetição acima do corte). Um jogo que cai em qualquer bloco recebe 0 pts.
-- A nota de corte é o **percentil 65 dos scores históricos** (aprox. 35% dos
-  concursos passam), limitada a 70–125 (conjunto) ou 45–90 (posicional).
+- A nota de corte é o **percentil 65 dos scores de sorteios simulados sob o
+  acaso** (aprox. 35% dos jogos passam; `calibrar(..., fonte="historico")` mantém o modo antigo), limitada a 70–125 (conjunto) ou 45–90 (posicional).
 - Lotomania (aposta de 50 dezenas, sorteio de 20) e Timemania (aposta de 10,
   sorteio de 7) usam um perfil por tamanho de jogo.
 - Na CLI o filtro de score é automático **apenas** quando não há restrições de
   histórico (fixas, excluídas, repetidas ou contaminação); `--score-min` força
   um valor e `--sem-score` desliga.
 
-O score mede aderência ao padrão histórico; **não** aumenta a probabilidade
+O score mede **tipicidade** (quão comum é o jogo ao acaso); **não** aumenta a probabilidade
 matemática de acerto.
 
 ```python
@@ -203,7 +203,7 @@ os concentrados (`3-1-1`, `4-1`, tudo numa linha) somam pouco:
   7 real) ficam sem filtro de padrão; Super Sete é posicional e não se aplica.
 - No **dashboard**, o card em destaque "Padrões que mais caem" mostra o padrão
   líder, as barras de frequência e os padrões excluídos; o gerador tem a
-  opção "só padrões top 3" (amostragem ponderada pela frequência histórica) e
+  opção "só padrões top 3" (amostragem por rejeição, uniforme dentro dos 3 padrões mais prováveis ao acaso) e
   cada jogo recebe o selo `padrão` — verde no top 3, âmbar fora.
 
 ```python
@@ -258,34 +258,59 @@ de concurso ao descobrir o último publicado.
 
 **https://jacksonmonteiro83.github.io/gerador-loterias-caixa/**
 
-Página estática com o último concurso de cada modalidade, frequência e atraso,
-distribuição da soma, repetição do concurso anterior, heatmap por coluna da Super
-Sete, **score dos últimos resultados** (limiar e aderência calibrados por
-modalidade), card em destaque dos **padrões de linha que mais caem** e um gerador
-rápido que mostra score e padrão de cada jogo (com filtro opcional "só padrões
-top 3"). Fica em `dashboard/` e é publicada pelo GitHub Actions a cada push.
+Página estática que mostra, para cada modalidade, **o observado ao lado do que o
+acaso produziria**: frequência e atraso com linha de esperado e faixa de 95%,
+soma (distribuição exata), repetição do concurso anterior (hipergeométrica),
+padrões de linha (multi-hipergeométrica), heatmap por coluna da Super Sete,
+**auditoria de aleatoriedade** (qui-quadrado, runs, autocorrelação, correção de
+Benjamini-Hochberg), **backtest** das estratégias de geração e um gerador de
+jogos. Fica em `dashboard/` e é publicada pelo GitHub Actions.
 
-Para atualizar os dados da página:
+Arquitetura:
+
+- **Cálculo em Python, desenho no navegador.** `scripts/export_dashboard.py`
+  grava `dashboard/data/index.json` (manifesto) e um JSON pequeno por modalidade,
+  baixado sob demanda. As distribuições de referência (`src/core/nulo.py`) são
+  conferidas contra `scipy` nos testes.
+- **Histórico acumulado e versionado** em `data/historico/<modalidade>.jsonl`.
+  O SQLite é descartável (nasce vazio a cada execução do Actions); antes de
+  baixar, o pipeline recarrega esses arquivos e só busca o que falta. Sem isso o
+  dashboard só enxergava os últimos 100 concursos.
+- **Backfill único:** Actions → "Atualizar resultados diarios" → Run workflow com
+  `completo` marcado (ou `python main.py --atualizar --completo`) baixa todos os
+  concursos que faltam. Enquanto o histórico não estiver completo, a página
+  avisa e mostra os intervalos de confiança correspondentes.
+- **Validação antes de publicar:** dezena fora da faixa, duplicata ou tamanho de
+  sorteio errado derrompem o export (exit 3); lacunas só geram aviso.
+- **Score = tipicidade**, calibrado por simulação sob o acaso (`fonte="nulo"`),
+  não por ajuste a poucos concursos. O histórico entra só como auditoria
+  (taxa observada com IC de Wilson vs. taxa esperada ao acaso).
+- **Gerador:** `crypto.getRandomValues` sem viés de módulo, Fisher-Yates parcial
+  e filtros por amostragem com rejeição (uniforme dentro do conjunto aceito).
+  "Evitar datas (≤ 31)" é uma heurística de rateio: não muda a chance de acerto.
+  A paridade do score JS↔Python é testada (`tests/test_js.py`).
+- A Lotomania registra a dezena "00" como 100; o pipeline normaliza isso.
+
+Para atualizar os dados localmente:
 
 ```bash
-python main.py --atualizar
-python scripts/export_dashboard.py
-git add dashboard/data.json && git commit -m "Atualiza dados do dashboard" && git push
+python main.py --atualizar            # incremental; grava data/historico/*.jsonl
+python scripts/export_dashboard.py    # valida e gera dashboard/data/*.json
 ```
 
 ### Atualização diária automática
 
 O workflow `.github/workflows/atualizar.yml` roda **todo dia às 3h da manhã
-(horário de Brasília)** no GitHub Actions: baixa os concursos novos da Caixa,
-reexporta `dashboard/data.json`, dá push no `main` e publica o GitHub Pages —
-sem intervenção manual. Também pode ser disparado à mão (aba **Actions** →
-"Atualizar resultados diarios" → **Run workflow**).
+(horário de Brasília)** no GitHub Actions: roda os testes, baixa os concursos
+novos da Caixa, valida e reexporta `dashboard/data/`, dá push no `main` e
+publica o GitHub Pages, sem intervenção manual. Também pode ser disparado à mão
+(aba **Actions** → "Atualizar resultados diarios" → **Run workflow**).
 
 Se a Caixa não responder e alguma modalidade não vier com dados reais, o
-`--atualizar` falha com código 2 e nada é publicado: o site continua com o
-último histórico real (e o Actions envia um e-mail de falha ao dono do repo).
-O Super Sete usa um espelho de terceiros (endpoint oficial devolve 500 há
-tempo); se o espelho cair, só ele fica desatualizado nesse dia.
+`--atualizar` falha com código 2 e nada é publicado (dados sintéticos de
+fallback nunca entram em `data/historico`). O Super Sete usa um espelho de
+terceiros (endpoint oficial devolve 500 há tempo); se o espelho cair, só ele
+fica desatualizado nesse dia.
 
 ---
 
