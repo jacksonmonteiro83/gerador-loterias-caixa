@@ -3,28 +3,32 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
 <title>Loterias Caixa — Dashboard</title>
-<meta name="description" content="Estatísticas públicas das oito modalidades das Loterias Caixa: frequência, atraso, soma, repetição e gerador de jogos.">
-<link rel="stylesheet" href="styles.css?v=20261112b">
+<meta name="description" content="Estatística descritiva das oito modalidades das Loterias Caixa, com referência teórica (acaso), auditoria de aleatoriedade e gerador de jogos.">
+<link rel="stylesheet" href="styles.css?v=20261113">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎲</text></svg>">
 </head>
 <body>
+<a class="pular" href="#painel">Pular para o conteúdo</a>
 <header class="topo">
   <div class="topo-inner">
     <div>
       <h1>Loterias Caixa <span>dashboard</span></h1>
-      <p class="sub">Estatísticas das oito modalidades, calculadas sobre o histórico baixado da Caixa.</p>
+      <p class="sub">Estatística descritiva sobre o histórico da Caixa, sempre comparada ao que o acaso produziria.</p>
     </div>
     <div class="meta-topo">
-      <span id="atualizado">carregando…</span>
+      <span id="atualizado">Carregando dados…</span>
       <span id="total-concursos"></span>
     </div>
   </div>
-  <nav id="tabs" class="tabs" aria-label="Modalidades"></nav>
+  <nav id="tabs" class="tabs" role="tablist" aria-label="Modalidades"></nav>
 </header>
 
-<main>
-  <section class="hero card" id="hero">
+<div id="estado" class="estado" role="status" aria-live="polite"></div>
+
+<main id="painel" role="tabpanel" tabindex="-1" aria-busy="true">
+  <section class="hero card" id="hero" aria-label="Último concurso">
     <div class="hero-info">
       <span class="rotulo" id="ultimo-rotulo">Último concurso</span>
       <strong id="ultimo-numero">—</strong>
@@ -33,71 +37,100 @@
     <div class="bolas" id="ultimo-bolas"></div>
   </section>
   <p class="legenda nota-loteria" id="nota-loteria"></p>
+  <div id="avisos"></div>
 
-  <section class="grid-stats" id="stats"></section>
+  <section class="card veredito" id="card-veredito" aria-labelledby="h-veredito">
+    <h2 id="h-veredito">O que o histórico diz</h2>
+    <p id="veredito-texto" class="veredito-texto">—</p>
+    <p class="legenda" id="veredito-detalhe"></p>
+  </section>
 
-  <section class="card destaque" id="card-padroes">
+  <section class="grid-stats" id="stats" aria-label="Resumo"></section>
+
+  <section class="card" aria-labelledby="h-freq">
     <div class="card-head">
-      <div class="padrao-head">
-        <span class="rotulo">Padrões que mais caem</span>
-        <strong id="padrao-top" class="padrao-top">—</strong>
+      <h2 id="h-freq">Frequência e atraso</h2>
+      <div class="toggle" role="group" aria-label="Métrica">
+        <button type="button" data-metrica="freq" aria-pressed="true">Frequência</button>
+        <button type="button" data-metrica="atraso" aria-pressed="false">Atraso</button>
       </div>
+    </div>
+    <p class="legenda" id="legenda-freq"></p>
+    <div id="grafico-freq" class="grafico"></div>
+    <details class="tabela-alt" id="tabela-freq">
+      <summary>Ver como tabela</summary>
+      <div class="tabela-scroll" id="tabela-freq-corpo"></div>
+    </details>
+  </section>
+
+  <div class="duo">
+    <section class="card" aria-labelledby="h-soma">
+      <h2 id="h-soma">Distribuição da soma</h2>
+      <p class="legenda" id="legenda-soma"></p>
+      <div id="histograma-soma" class="grafico"></div>
+    </section>
+    <section class="card" aria-labelledby="h-rep">
+      <h2 id="h-rep">Repetição do concurso anterior</h2>
+      <p class="legenda" id="legenda-rep"></p>
+      <div class="barras-h" id="barras-repeticao"></div>
+    </section>
+  </div>
+
+  <section class="card" id="card-padroes" aria-labelledby="h-padroes">
+    <div class="card-head">
+      <h2 id="h-padroes">Padrões de linha</h2>
       <div class="score-kpi" id="padrao-kpi"></div>
     </div>
     <p class="legenda" id="legenda-padroes"></p>
     <div class="barras-h" id="barras-padroes"></div>
   </section>
 
-  <section class="card">
+  <section class="card" aria-labelledby="h-score">
     <div class="card-head">
-      <h2>Score dos últimos resultados</h2>
-      <div class="score-kpi" id="score-kpi">—</div>
+      <h2 id="h-score">Tipicidade dos últimos resultados</h2>
+      <div class="score-kpi" id="score-kpi"></div>
     </div>
     <p class="legenda" id="legenda-score"></p>
     <div class="score-lista" id="score-lista"></div>
   </section>
 
-  <section class="card">
-    <div class="card-head">
-      <h2>Frequência e atraso</h2>
-      <div class="toggle" role="group" aria-label="Métrica">
-        <button data-metrica="freq" class="ativo">Frequência</button>
-        <button data-metrica="atraso">Atraso</button>
-      </div>
+  <section class="card" aria-labelledby="h-audit">
+    <h2 id="h-audit">Auditoria de aleatoriedade</h2>
+    <p class="legenda" id="legenda-audit"></p>
+    <div class="tabela-scroll" id="tabela-audit"></div>
+    <h3 class="sub-titulo">Backtest: estratégias de geração contra os sorteios reais</h3>
+    <p class="legenda" id="legenda-backtest"></p>
+    <div class="tabela-scroll" id="tabela-backtest"></div>
+    <div id="bloco-rateio" hidden>
+      <h3 class="sub-titulo">Rateio: combinações populares e nº de ganhadores</h3>
+      <p class="legenda" id="legenda-rateio"></p>
+      <div class="tabela-scroll" id="tabela-rateio"></div>
     </div>
-    <p class="legenda" id="legenda-freq"></p>
-    <div class="grafico-freq" id="grafico-freq"></div>
   </section>
 
-  <div class="duo">
-    <section class="card">
-      <h2>Distribuição da soma</h2>
-      <p class="legenda" id="legenda-soma"></p>
-      <div class="histograma" id="histograma-soma"></div>
-    </section>
-    <section class="card">
-      <h2>Repetição do concurso anterior</h2>
-      <p class="legenda">Quantas dezenas de um sorteio repetem no seguinte.</p>
-      <div class="barras-h" id="barras-repeticao"></div>
-    </section>
-  </div>
-
-  <section class="card">
+  <section class="card" aria-labelledby="h-gerador">
     <div class="card-head">
-      <h2>Gerador rápido</h2>
-      <div class="gerador-controles">
-        <label for="qtd">jogos</label>
-        <input id="qtd" type="number" min="1" max="20" value="5">
-        <label class="check-padrao" for="filtrar-padroes" title="Gera apenas jogos cuja distribuição por linha está entre os 3 padrões mais frequentes do histórico">
-          <input id="filtrar-padroes" type="checkbox" checked>
-          só padrões top 3
-        </label>
-        <button id="gerar" class="btn">Gerar</button>
-      </div>
+      <h2 id="h-gerador">Gerador de jogos</h2>
     </div>
-    <p class="legenda">Cada jogo usa o tamanho mínimo de aposta e mostra score e padrão de linha; verde = no top 3 de padrões, âmbar = fora, selo de score verde = aprovado no limiar.</p>
-    <div id="jogos" class="jogos"></div>
-    <p class="legenda aviso">Nenhum filtro aumenta a chance matemática de acerto. Todos os jogos válidos têm a mesma probabilidade. Proibido para menores de 18 anos.</p>
+    <form class="gerador-controles" id="form-gerador" autocomplete="off">
+      <label for="qtd">Jogos</label>
+      <input id="qtd" name="qtd" type="number" min="1" max="20" value="5" inputmode="numeric">
+      <label for="estrategia">Método</label>
+      <select id="estrategia" name="estrategia">
+        <option value="aleatorio">Aleatório (uniforme)</option>
+        <option value="padroes" selected>Só padrões de linha top 3</option>
+        <option value="aprovado">Só jogos típicos (score ≥ limiar)</option>
+      </select>
+      <label class="check" for="evitar-datas" id="rotulo-evitar-datas">
+        <input id="evitar-datas" name="evitar-datas" type="checkbox">
+        evitar combinações de datas (≤ 31)
+      </label>
+      <button id="gerar" class="btn" type="submit">Gerar</button>
+      <button id="copiar" class="btn btn-sec" type="button" hidden>Copiar</button>
+    </form>
+    <p class="legenda" id="legenda-gerador"></p>
+    <div id="jogos" class="jogos" aria-live="polite"></div>
+    <p class="legenda aviso">Nenhum filtro aumenta a chance matemática de acerto: todos os jogos válidos têm a mesma probabilidade. Os filtros só restringem quais combinações são elegíveis. Proibido para menores de 18 anos.</p>
   </section>
 </main>
 
@@ -106,6 +139,8 @@
   <p class="fino">Ferramenta estatística e educacional, sem vínculo com a Caixa Econômica Federal.</p>
 </footer>
 
-<script src="app.js?v=20261112b"></script>
+<noscript><p class="estado erro">Este painel precisa de JavaScript para carregar os dados.</p></noscript>
+<script src="gerador.js?v=20261113"></script>
+<script src="app.js?v=20261113"></script>
 </body>
 </html>

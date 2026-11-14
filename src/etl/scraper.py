@@ -60,6 +60,17 @@ def _eh_posicional(loteria: str) -> bool:
     return _chave_loteria(loteria) in _LOTERIAS_POSICIONAIS
 
 
+def normalizar_dezenas(loteria: str, dezenas: list[int]) -> list[int]:
+    """Ajusta convenções da Caixa: na Lotomania a dezena "00" é a 100ª.
+
+    O volante da Lotomania vai de 01 a 99 e termina em 00. Sem esse ajuste a
+    dezena 100 nunca aparece nas estatísticas e surge uma dezena 0 inexistente.
+    """
+    if _chave_loteria(loteria) == "lotomania":
+        return sorted(100 if int(d) == 0 else int(d) for d in dezenas)
+    return list(dezenas)
+
+
 def _para_int(valor: Any) -> int:
     """Converte um valor escalar em inteiro, tolerando strings da API."""
     if isinstance(valor, bool):
@@ -160,7 +171,7 @@ def normalizar_resposta(payload: dict, loteria: str) -> dict | None:
         logger.debug("Dezenas inválidas no concurso %s de %s", concurso, chave)
         return None
     if not _eh_posicional(chave):
-        dezenas = sorted(set(dezenas))
+        dezenas = sorted(set(normalizar_dezenas(chave, dezenas)))
 
     try:
         data = _normalizar_data(
@@ -355,10 +366,42 @@ def baixar_intervalo(slug: str, de: int, ate: int) -> list[dict]:
     return registros
 
 
+def baixar_numeros(
+    slug: str, numeros: list[int], limite: int | None = None
+) -> tuple[list[dict], list[int]]:
+    """Baixa concursos específicos, seguindo adiante quando algum falha.
+
+    Ao contrário de :func:`baixar_intervalo` (que para no primeiro vazio), aqui
+    uma falha pontual não bloqueia o restante: serve ao preenchimento do
+    histórico completo (*backfill*), que pode ser retomado em outra execução.
+    ``limite`` é o orçamento máximo de concursos a baixar nesta chamada.
+    Devolve ``(registros, falhas)``.
+    """
+    registros: list[dict] = []
+    falhas: list[int] = []
+    sessao = requests.Session()
+    try:
+        for numero in sorted(set(int(n) for n in numeros)):
+            if limite is not None and len(registros) + len(falhas) >= limite:
+                break
+            registro = buscar_concurso(slug, numero, session=sessao)
+            if registro is None:
+                falhas.append(numero)
+                continue
+            registros.append(registro)
+            if len(registros) % 100 == 0:
+                logger.info("Baixados %d concursos de %s", len(registros), slug)
+    finally:
+        sessao.close()
+    return registros, falhas
+
+
 __all__ = [
     "SLUGS",
     "normalizar_resposta",
+    "normalizar_dezenas",
     "buscar_concurso",
     "obter_ultimo",
     "baixar_intervalo",
+    "baixar_numeros",
 ]
