@@ -138,3 +138,17 @@ test("elegivelRepetidas: só com o flag e fora da Super Sete", () => {
   assert.equal(G.elegivelRepetidas(megaInfo()), false);
   assert.equal(G.elegivelRepetidas({ ...megaRep(), posicional: true }), false);
 });
+
+test("repetidas na Timemania: jogo de 10 dezenas contra o sorteio de 7", () => {
+  const info = { min: 1, max: 80, sorteadas: 7, aposta_min: 10, posicional: false, chave: "timemania", filtro_repetidas: true, padroes_top3: [], perfil: null };
+  const anterior = [2, 11, 12, 23, 31, 65, 67];
+  for (const opcao of ["0", "1", "0-1"]) {
+    const aceitas = G.repetidasAceitas(opcao);
+    const { jogos, esgotou } = G.gerarJogos(info, 40, { repetidas: opcao, anterior, tamanho: 10 });
+    assert.equal(esgotou, false);
+    for (const { dezenas } of jogos) {
+      assert.equal(dezenas.length, 10);
+      assert.ok(aceitas.includes(G.repetidasDoAnterior(dezenas, anterior)), `${opcao}: ${dezenas}`);
+    }
+  }
+});

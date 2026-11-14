@@ -663,7 +663,7 @@
     if (!padroesOk && select.value === "padroes") select.value = "aleatorio";
     if (padroesOk && !estado.escolheuMetodo) select.value = "padroes";
     select.onchange = () => { estado.escolheuMetodo = true; };
-    const repOk = G.elegivelRepetidas(d) && tamanho === d.sorteadas;
+    const repOk = G.elegivelRepetidas(d);
     $("#rotulo-repetidas").hidden = !repOk;
     $("#repetidas").hidden = !repOk;
     if (!repOk) $("#repetidas").value = "aleatorio";
@@ -677,7 +677,7 @@
     $("#legenda-gerador").textContent =
       `Jogo de ${tamanho} dezenas. Chance de acertar todas as dezenas sorteadas: 1 em ${chance.toLocaleString("pt-BR")} — igual para qualquer combinação. ` +
       `Os filtros usam amostragem com rejeição (uniforme dentro das combinações aceitas); "evitar datas" é só uma heurística de rateio.` +
-      (repOk ? ` "Repetidas do anterior" fixa quantas dezenas do jogo também saíram no concurso #${fmt(d.ultimo.n)}; em "Aleatório" não há restrição.` : "");
+      (repOk ? ` "Repetidas do anterior" fixa quantas dezenas do jogo também saíram no concurso #${fmt(d.ultimo.n)} (que teve ${d.sorteadas} dezenas); em "Aleatório" não há restrição.` : "");
   }
 
   function gerarJogos() {

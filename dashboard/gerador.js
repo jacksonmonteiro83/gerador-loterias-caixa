@@ -234,9 +234,7 @@
     const evitar = Boolean(opcoes.evitarDatas) && elegivelEvitarDatas(info);
     const teto = evitar ? limiteDatas(info, tamanho) : Infinity;
     const aceitas =
-      elegivelRepetidas(info) && tamanho === info.sorteadas && opcoes.anterior
-        ? repetidasAceitas(opcoes.repetidas)
-        : null;
+      elegivelRepetidas(info) && opcoes.anterior ? repetidasAceitas(opcoes.repetidas) : null;
 
     let ultimo = null;
     for (let t = 1; t <= MAX_TENTATIVAS; t++) {

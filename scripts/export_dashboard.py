@@ -36,7 +36,7 @@ from src.utils import db  # noqa: E402
 
 VERSAO_SCHEMA = 3
 # modalidades em que o gerador oferece o filtro "repetidas do concurso anterior" (0 ou 1)
-FILTRO_REPETIDAS = {"mega-sena", "quina"}
+FILTRO_REPETIDAS = {"mega-sena", "quina", "timemania"}
 JANELA_PADRAO = 500  # concursos recentes usados para calibrar o score (0 = todos)
 
 MODALIDADES: dict[str, dict] = {
