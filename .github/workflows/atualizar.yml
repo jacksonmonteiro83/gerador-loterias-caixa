@@ -57,7 +57,14 @@ jobs:
           if [[ -n "$(git status --short)" ]]; then
             git add -A
             git commit -m "chore: resultados de $(TZ=America/Sao_Paulo date +%d/%m/%Y)"
-            git push
+            # outro commit pode ter entrado no main durante a execução (o backfill
+            # demora): integra e tenta de novo em vez de falhar com "fetch first"
+            for tentativa in 1 2 3 4; do
+              git pull --rebase -X theirs origin "${GITHUB_REF_NAME}" && git push && break
+              echo "push rejeitado (tentativa $tentativa); tentando de novo"
+              sleep $((tentativa * 5))
+              [[ $tentativa == 4 ]] && exit 1
+            done
             echo "atualizado=true" >> "$GITHUB_OUTPUT"
           else
             echo "Nenhum concurso novo desde a última execução."
