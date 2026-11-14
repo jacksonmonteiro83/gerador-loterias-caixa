@@ -383,3 +383,17 @@ CSV/PDF de volantes e uma interface web simples.
 ## Licença
 
 MIT.
+
+## Base de dados real (loterias-dashboard)
+
+O repositório [`loterias-dashboard`](https://github.com/jacksonmonteiro83/loterias-dashboard) atualiza todo dia
+o histórico completo de cada loteria (`data/raw/<loteria>.json`, com dezenas e ganhadores por faixa).
+O workflow diário roda `python scripts/sincronizar_base.py`, que baixa esses arquivos, valida
+(faixa, tamanho, duplicatas, lacunas) e mescla em `data/historico/*.jsonl`. A API da Caixa fica só como
+complemento para concursos que ainda não chegaram lá. Localmente:
+
+```
+python scripts/sincronizar_base.py                                  # baixa do GitHub
+python scripts/sincronizar_base.py --origem ../loterias-dashboard/data/raw   # de uma cópia local
+python scripts/export_dashboard.py
+```

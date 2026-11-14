@@ -37,7 +37,13 @@ jobs:
         run: python -m pip install -r requirements.txt
       - name: Testes (estatística, ETL e paridade JS/Python)
         run: python -m pytest -q
-      - name: Baixar concursos novos da Caixa
+      - name: Sincronizar histórico com o loterias-dashboard
+        # a base diária do repositório loterias-dashboard (todos os concursos,
+        # com ganhadores) vira a fonte principal; se falhar, segue com o que
+        # já está versionado em data/historico/ e com a API da Caixa
+        continue-on-error: true
+        run: python scripts/sincronizar_base.py
+      - name: Completar com concursos novos da API da Caixa
         # o SQLite nasce vazio a cada execução; o histórico acumulado vem de
         # data/historico/*.jsonl e só o que falta é baixado
         run: |
