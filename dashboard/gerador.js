@@ -200,11 +200,28 @@
     return Math.floor((tamanho * LIMITE_DATA) / universo);
   }
 
+  /** Quantas dezenas do jogo saíram no concurso anterior. */
+  const repetidasDoAnterior = (dezenas, anterior) => {
+    const ant = new Set(anterior || []);
+    return dezenas.filter((d) => ant.has(d)).length;
+  };
+
+  /** Interpreta a opção "repetidas": null (aleatório) ou lista de contagens aceitas. */
+  function repetidasAceitas(valor) {
+    if (valor === "0") return [0];
+    if (valor === "1") return [1];
+    if (valor === "0-1") return [0, 1];
+    return null;
+  }
+
+  const elegivelRepetidas = (info) => Boolean(info.filtro_repetidas) && !info.posicional;
+
   const elegivelEvitarDatas = (info) => !info.posicional && info.max - info.min + 1 > LIMITE_DATA;
 
   /**
    * Gera um jogo por amostragem com rejeição.
    * opcoes: { estrategia: "aleatorio"|"padroes"|"aprovado", evitarDatas, anterior,
+   *           repetidas: "aleatorio"|"0"|"1"|"0-1" (dezenas repetidas do anterior),
    *           perfil, tamanho, uint32 }
    * Devolve { dezenas, tentativas, esgotou }.
    */
@@ -216,6 +233,10 @@
     const usarScore = opcoes.estrategia === "aprovado" && perfil;
     const evitar = Boolean(opcoes.evitarDatas) && elegivelEvitarDatas(info);
     const teto = evitar ? limiteDatas(info, tamanho) : Infinity;
+    const aceitas =
+      elegivelRepetidas(info) && tamanho === info.sorteadas && opcoes.anterior
+        ? repetidasAceitas(opcoes.repetidas)
+        : null;
 
     let ultimo = null;
     for (let t = 1; t <= MAX_TENTATIVAS; t++) {
@@ -223,6 +244,7 @@
       ultimo = dezenas;
       if (usarPadroes && !top3.has(padraoLinhas(perfil, dezenas))) continue;
       if (evitar && indicePopularidade(dezenas) > teto) continue;
+      if (aceitas && !aceitas.includes(repetidasDoAnterior(dezenas, opcoes.anterior))) continue;
       if (usarScore && !pontuarJogo(perfil, dezenas, opcoes.anterior).aprovado) continue;
       return { dezenas, tentativas: t, esgotou: false };
     }
@@ -268,6 +290,7 @@
   return {
     inteiro, amostra, metricasJogo, pontuarJogo, padraoLinhas, quadrantesMalha,
     gerarJogo, gerarJogos, indicePopularidade, limiteDatas, elegivelEvitarDatas,
+    repetidasDoAnterior, repetidasAceitas, elegivelRepetidas,
     combinacoes, umEm, MAX_TENTATIVAS, LIMITE_DATA,
   };
 });

@@ -35,6 +35,8 @@ from src.loterias.registry import get_loteria  # noqa: E402
 from src.utils import db  # noqa: E402
 
 VERSAO_SCHEMA = 3
+# modalidades em que o gerador oferece o filtro "repetidas do concurso anterior" (0 ou 1)
+FILTRO_REPETIDAS = {"mega-sena", "quina"}
 JANELA_PADRAO = 500  # concursos recentes usados para calibrar o score (0 = todos)
 
 MODALIDADES: dict[str, dict] = {
@@ -102,6 +104,7 @@ def _modalidade(
         "sorteadas": k,
         "aposta_min": spec.aposta_min,
         "posicional": info["posicional"],
+        "filtro_repetidas": chave in FILTRO_REPETIDAS,
         "nota": info.get("nota"),
         "linhas": spec.linhas,
         "colunas_malha": spec.colunas,
@@ -122,6 +125,12 @@ def _modalidade(
     for i in range(max(0, len(registros) - 10), len(registros)):
         anterior = draws[i - 1] if i > 0 else None
         r = perfil.avaliar(draws[i], anterior)
+        if anterior is None:
+            repetidas = None
+        elif info["posicional"]:  # Super Sete: colunas com o mesmo dígito do concurso anterior
+            repetidas = sum(1 for a, b in zip(anterior, draws[i]) if a == b)
+        else:
+            repetidas = len(set(anterior) & set(draws[i]))
         recentes.append(
             {
                 "n": registros[i]["n"],
@@ -130,6 +139,7 @@ def _modalidade(
                 "s": r["score"],
                 "a": 1 if r["aprovado"] else 0,
                 "p": scoring.padrao_linhas(draws[i], spec),
+                "r": repetidas,
             }
         )
 

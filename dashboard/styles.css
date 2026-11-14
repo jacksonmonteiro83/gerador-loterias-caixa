@@ -110,7 +110,7 @@ main[aria-busy="true"] { opacity: .55; transition: opacity .15s; }
 .score-kpi { display: flex; flex-wrap: wrap; gap: 6px 14px; color: var(--sub); font-size: .85rem; }
 .score-kpi b { color: var(--texto); }
 .score-lista { display: grid; gap: 6px; }
-.score-linha { display: grid; grid-template-columns: 80px auto 1fr auto; gap: 10px; align-items: center; font-size: .88rem; }
+.score-linha { display: grid; grid-template-columns: 80px auto auto 1fr auto; gap: 10px; align-items: center; font-size: .88rem; }
 .score-badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: .8rem; border: 1px solid var(--neutro); color: var(--texto); font-variant-numeric: tabular-nums; }
 .score-badge.ok { border-color: var(--acento); }
 .score-badge.ok::before { content: "✓ "; color: var(--acento); }
@@ -146,7 +146,7 @@ footer p { margin: 2px 0; }
   .meta-topo { text-align: left; }
   .linha-barra { grid-template-columns: 70px 1fr; }
   .linha-barra b { grid-column: 1 / -1; text-align: left; color: var(--sub); }
-  .score-linha { grid-template-columns: 70px auto 1fr; }
+  .score-linha { grid-template-columns: 70px auto auto 1fr; }
   .score-status { display: none; }
 }
 

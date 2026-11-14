@@ -519,12 +519,15 @@
     const lista = limpar($("#score-lista"));
     const legenda = $("#legenda-score");
     if (!perfil) { legenda.textContent = "Sem modelo de score para esta modalidade."; return; }
+    const repNota = d.posicional
+      ? "“rep.” = colunas com o mesmo dígito do concurso anterior. "
+      : "“rep.” = dezenas que também saíram no concurso anterior. ";
     kpi.append(
       el("span", {}, document.createTextNode("limiar "), el("b", { text: String(perfil.limiar) }), document.createTextNode(`/${perfil.maximo}`)),
     );
     if (perfil.fonte !== "nulo") {
       kpi.append(el("span", {}, document.createTextNode("aprovam "), el("b", { text: pct(perfil.aderencia) })));
-      legenda.textContent =
+      legenda.textContent = repNota +
         `O score mede tipicidade (quão comum é o jogo entre os sorteios reais), não qualidade nem chance de acerto. ` +
         `Faixas e limiar foram calibrados nos ${fmt(perfil.amostra)} concursos reais mais recentes; o limiar fica no percentil 65 deles (perto de 35% passam, com variação por empates), ` +
         `então essa taxa não valida nada (é circular).` +
@@ -541,10 +544,19 @@
       compat = ` Taxa de jogos típicos no histórico: ${pct(perfil.aderencia_hist)} (IC 95%: ${pct(lo)}–${pct(hi)}, n = ${fmt(perfil.amostra_hist)}) — ` +
         (dentro ? "compatível com a taxa esperada ao acaso." : "fora do intervalo esperado ao acaso; vale checar os dados.");
     }
-    legenda.textContent =
+    legenda.textContent = repNota +
       `O score mede tipicidade (quão comum é o jogo entre sorteios aleatórios), não qualidade nem chance de acerto. ` +
       `Faixas e limiar vêm de ${fmt(perfil.amostra_nulo)} sorteios simulados sob o acaso, sem ajuste ao histórico.` + compat;
     listarScores(d, lista);
+  }
+
+  function textoRepetidas(d, c, forma) {
+    if (c.r == null) return "—";
+    const unidade = d.posicional ? ["coluna", "colunas"] : ["dezena", "dezenas"];
+    const nome = c.r === 1 ? unidade[0] : unidade[1];
+    return forma === "curto"
+      ? `${c.r} rep.`
+      : `${c.r} ${nome} repetida${c.r === 1 ? "" : "s"} em relação ao concurso anterior`;
   }
 
   function listarScores(d, lista) {
@@ -552,6 +564,7 @@
       const tipico = Boolean(c.a);
       lista.append(el("div", { class: "score-linha" },
         el("span", { class: "score-concurso", text: `#${fmt(c.n)}` }),
+        el("span", { class: "score-badge", title: textoRepetidas(d, c, "longo"), text: textoRepetidas(d, c, "curto") }),
         el("span", { class: `score-badge ${tipico ? "ok" : "neutro"}`, text: `${c.s} pts` }),
         el("span", { class: "score-detalhe", text: c.p ? `padrão ${c.p}` : `soma ${c.z.reduce((s, v) => s + v, 0)}` }),
         el("span", { class: "score-status", text: tipico ? "típico" : "atípico" }),
@@ -650,6 +663,10 @@
     if (!padroesOk && select.value === "padroes") select.value = "aleatorio";
     if (padroesOk && !estado.escolheuMetodo) select.value = "padroes";
     select.onchange = () => { estado.escolheuMetodo = true; };
+    const repOk = G.elegivelRepetidas(d) && tamanho === d.sorteadas;
+    $("#rotulo-repetidas").hidden = !repOk;
+    $("#repetidas").hidden = !repOk;
+    if (!repOk) $("#repetidas").value = "aleatorio";
     const elegivel = G.elegivelEvitarDatas(d);
     $("#rotulo-evitar-datas").hidden = !elegivel;
     if (!elegivel) $("#evitar-datas").checked = false;
@@ -659,7 +676,8 @@
     const chance = G.umEm(d, tamanho);
     $("#legenda-gerador").textContent =
       `Jogo de ${tamanho} dezenas. Chance de acertar todas as dezenas sorteadas: 1 em ${chance.toLocaleString("pt-BR")} — igual para qualquer combinação. ` +
-      `Os filtros usam amostragem com rejeição (uniforme dentro das combinações aceitas); "evitar datas" é só uma heurística de rateio.`;
+      `Os filtros usam amostragem com rejeição (uniforme dentro das combinações aceitas); "evitar datas" é só uma heurística de rateio.` +
+      (repOk ? ` "Repetidas do anterior" fixa quantas dezenas do jogo também saíram no concurso #${fmt(d.ultimo.n)}; em "Aleatório" não há restrição.` : "");
   }
 
   function gerarJogos() {
@@ -671,6 +689,7 @@
     const opcoes = {
       estrategia: $("#estrategia").value,
       evitarDatas: $("#evitar-datas").checked,
+      repetidas: $("#repetidas").value,
       anterior: d.ultimo.z,
       perfil,
       tamanho: d.aposta_min,
@@ -686,7 +705,8 @@
       const linha = el("div", { class: "jogo" });
       const bolas = el("div", { class: "bolas" });
       for (const v of dezenas) bolas.append(el("span", { class: `bola${d.posicional ? " azul" : ""}`, text: rotuloBola(v, d.posicional) }));
-      linha.append(bolas, el("span", { class: "tag", text: `soma ${soma} · ${pares} par(es)` }));
+      const rep = G.elegivelRepetidas(d) ? ` · ${G.repetidasDoAnterior(dezenas, d.ultimo.z)} rep.` : "";
+      linha.append(bolas, el("span", { class: "tag", text: `soma ${soma} · ${pares} par(es)${rep}` }));
       if (!d.posicional) {
         const padrao = G.padraoLinhas(perfil, dezenas);
         const nota = d.aposta_min === d.sorteadas ? (top3.has(padrao) ? " · top 3" : " · fora do top 3") : "";

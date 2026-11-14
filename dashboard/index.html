@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="dark">
 <title>Loterias Caixa — Dashboard</title>
 <meta name="description" content="Estatística descritiva das oito modalidades das Loterias Caixa, com referência teórica (acaso), auditoria de aleatoriedade e gerador de jogos.">
-<link rel="stylesheet" href="styles.css?v=20261113">
+<link rel="stylesheet" href="styles.css?v=20261114">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎲</text></svg>">
 </head>
 <body>
@@ -47,6 +47,15 @@
 
   <section class="grid-stats" id="stats" aria-label="Resumo"></section>
 
+  <section class="card" aria-labelledby="h-score">
+    <div class="card-head">
+      <h2 id="h-score">Últimos concursos</h2>
+      <div class="score-kpi" id="score-kpi"></div>
+    </div>
+    <p class="legenda" id="legenda-score"></p>
+    <div class="score-lista" id="score-lista"></div>
+  </section>
+
   <section class="card" aria-labelledby="h-freq">
     <div class="card-head">
       <h2 id="h-freq">Frequência e atraso</h2>
@@ -85,14 +94,6 @@
     <div class="barras-h" id="barras-padroes"></div>
   </section>
 
-  <section class="card" aria-labelledby="h-score">
-    <div class="card-head">
-      <h2 id="h-score">Tipicidade dos últimos resultados</h2>
-      <div class="score-kpi" id="score-kpi"></div>
-    </div>
-    <p class="legenda" id="legenda-score"></p>
-    <div class="score-lista" id="score-lista"></div>
-  </section>
 
   <section class="card" aria-labelledby="h-audit">
     <h2 id="h-audit">Auditoria de aleatoriedade</h2>
@@ -121,6 +122,13 @@
         <option value="padroes" selected>Só padrões de linha top 3</option>
         <option value="aprovado">Só jogos típicos (score ≥ limiar)</option>
       </select>
+      <label for="repetidas" id="rotulo-repetidas" hidden>Repetidas do anterior</label>
+      <select id="repetidas" name="repetidas" hidden>
+        <option value="aleatorio" selected>Aleatório</option>
+        <option value="0">0 repetidas</option>
+        <option value="1">1 repetida</option>
+        <option value="0-1">0 ou 1</option>
+      </select>
       <label class="check" for="evitar-datas" id="rotulo-evitar-datas">
         <input id="evitar-datas" name="evitar-datas" type="checkbox">
         evitar combinações de datas (≤ 31)
@@ -140,7 +148,7 @@
 </footer>
 
 <noscript><p class="estado erro">Este painel precisa de JavaScript para carregar os dados.</p></noscript>
-<script src="gerador.js?v=20261113"></script>
-<script src="app.js?v=20261113"></script>
+<script src="gerador.js?v=20261114"></script>
+<script src="app.js?v=20261114"></script>
 </body>
 </html>

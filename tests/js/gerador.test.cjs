@@ -99,3 +99,42 @@ test("umEm: probabilidade exata do prêmio máximo", () => {
   assert.equal(G.umEm({ min: 0, max: 9, sorteadas: 7, posicional: true }, 7), 10000000n);
   assert.equal(G.combinacoes(5, 2), 10n);
 });
+
+const megaRep = () => ({ ...megaInfo(), chave: "mega-sena", filtro_repetidas: true });
+const anteriorMega = [5, 10, 15, 20, 25, 30];
+
+test("repetidas: 0, 1 e 0-1 respeitam a contagem em relação ao concurso anterior", () => {
+  for (const [opcao, aceitas] of [["0", [0]], ["1", [1]], ["0-1", [0, 1]]]) {
+    const { jogos, esgotou } = G.gerarJogos(megaRep(), 60, { estrategia: "aleatorio", repetidas: opcao, anterior: anteriorMega });
+    assert.equal(esgotou, false);
+    for (const { dezenas } of jogos) {
+      assert.ok(aceitas.includes(G.repetidasDoAnterior(dezenas, anteriorMega)), `${opcao}: ${dezenas}`);
+    }
+  }
+});
+
+test("repetidas: 'aleatorio' não restringe e modalidades sem o filtro o ignoram", () => {
+  const livre = G.gerarJogos(megaRep(), 200, { repetidas: "aleatorio", anterior: anteriorMega });
+  const cont = new Set(livre.jogos.map((j) => G.repetidasDoAnterior(j.dezenas, anteriorMega)));
+  assert.ok(cont.size > 2, "sem filtro deve aparecer variedade de contagens");
+  const lotofacil = { ...megaInfo(), max: 25, sorteadas: 15, aposta_min: 15, padroes_top3: [] };
+  const r = G.gerarJogos(lotofacil, 30, { repetidas: "0", anterior: Array.from({ length: 15 }, (_, i) => i + 1) });
+  assert.ok(r.jogos.some((j) => G.repetidasDoAnterior(j.dezenas, Array.from({ length: 15 }, (_, i) => i + 1)) > 0));
+});
+
+test("repetidas: com o filtro, a distribuição é a hipergeométrica condicionada (uniforme no conjunto aceito)", () => {
+  // P(1 | 0 ou 1) = P(1)/(P(0)+P(1)); H(60,6,6): P0 = C(54,6)/C(60,6), P1 = 6*C(54,5)/C(60,6)
+  const C = (n, k) => Number(G.combinacoes(n, k));
+  const p0 = C(54, 6), p1 = 6 * C(54, 5), esperado = p1 / (p0 + p1);
+  const n = 20000;
+  const { jogos } = G.gerarJogos(megaRep(), n, { repetidas: "0-1", anterior: anteriorMega });
+  // gerarJogos deduplica jogos: o viés é desprezível frente a 50 milhões de combinações
+  const uns = jogos.filter((j) => G.repetidasDoAnterior(j.dezenas, anteriorMega) === 1).length / n;
+  assert.ok(Math.abs(uns - esperado) < 0.02, `obs ${uns.toFixed(3)} esp ${esperado.toFixed(3)}`);
+});
+
+test("elegivelRepetidas: só com o flag e fora da Super Sete", () => {
+  assert.equal(G.elegivelRepetidas(megaRep()), true);
+  assert.equal(G.elegivelRepetidas(megaInfo()), false);
+  assert.equal(G.elegivelRepetidas({ ...megaRep(), posicional: true }), false);
+});
