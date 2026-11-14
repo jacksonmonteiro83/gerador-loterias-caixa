@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="dark">
 <title>Loterias Caixa — Dashboard</title>
 <meta name="description" content="Estatística descritiva das oito modalidades das Loterias Caixa, com referência teórica (acaso), auditoria de aleatoriedade e gerador de jogos.">
-<link rel="stylesheet" href="styles.css?v=20261114">
+<link rel="stylesheet" href="styles.css?v=20261115">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎲</text></svg>">
 </head>
 <body>
@@ -38,6 +38,38 @@
   </section>
   <p class="legenda nota-loteria" id="nota-loteria"></p>
   <div id="avisos"></div>
+
+  <section class="card" aria-labelledby="h-gerador">
+    <div class="card-head">
+      <h2 id="h-gerador">Gerador de jogos</h2>
+    </div>
+    <form class="gerador-controles" id="form-gerador" autocomplete="off">
+      <label for="qtd">Jogos</label>
+      <input id="qtd" name="qtd" type="number" min="1" max="20" value="5" inputmode="numeric">
+      <label for="estrategia">Método</label>
+      <select id="estrategia" name="estrategia">
+        <option value="aleatorio">Aleatório (uniforme)</option>
+        <option value="padroes" selected>Só padrões de linha top 3</option>
+        <option value="aprovado">Só jogos típicos (score ≥ limiar)</option>
+      </select>
+      <label for="repetidas" id="rotulo-repetidas" hidden>Repetidas do anterior</label>
+      <select id="repetidas" name="repetidas" hidden>
+        <option value="aleatorio" selected>Aleatório</option>
+        <option value="0">0 repetidas</option>
+        <option value="1">1 repetida</option>
+        <option value="0-1">0 ou 1</option>
+      </select>
+      <label class="check" for="evitar-datas" id="rotulo-evitar-datas">
+        <input id="evitar-datas" name="evitar-datas" type="checkbox">
+        evitar combinações de datas (≤ 31)
+      </label>
+      <button id="gerar" class="btn" type="submit">Gerar</button>
+      <button id="copiar" class="btn btn-sec" type="button" hidden>Copiar</button>
+    </form>
+    <p class="legenda" id="legenda-gerador"></p>
+    <div id="jogos" class="jogos" aria-live="polite"></div>
+    <p class="legenda aviso">Nenhum filtro aumenta a chance matemática de acerto: todos os jogos válidos têm a mesma probabilidade. Os filtros só restringem quais combinações são elegíveis. Proibido para menores de 18 anos.</p>
+  </section>
 
   <section class="card veredito" id="card-veredito" aria-labelledby="h-veredito">
     <h2 id="h-veredito">O que o histórico diz</h2>
@@ -108,38 +140,6 @@
       <div class="tabela-scroll" id="tabela-rateio"></div>
     </div>
   </section>
-
-  <section class="card" aria-labelledby="h-gerador">
-    <div class="card-head">
-      <h2 id="h-gerador">Gerador de jogos</h2>
-    </div>
-    <form class="gerador-controles" id="form-gerador" autocomplete="off">
-      <label for="qtd">Jogos</label>
-      <input id="qtd" name="qtd" type="number" min="1" max="20" value="5" inputmode="numeric">
-      <label for="estrategia">Método</label>
-      <select id="estrategia" name="estrategia">
-        <option value="aleatorio">Aleatório (uniforme)</option>
-        <option value="padroes" selected>Só padrões de linha top 3</option>
-        <option value="aprovado">Só jogos típicos (score ≥ limiar)</option>
-      </select>
-      <label for="repetidas" id="rotulo-repetidas" hidden>Repetidas do anterior</label>
-      <select id="repetidas" name="repetidas" hidden>
-        <option value="aleatorio" selected>Aleatório</option>
-        <option value="0">0 repetidas</option>
-        <option value="1">1 repetida</option>
-        <option value="0-1">0 ou 1</option>
-      </select>
-      <label class="check" for="evitar-datas" id="rotulo-evitar-datas">
-        <input id="evitar-datas" name="evitar-datas" type="checkbox">
-        evitar combinações de datas (≤ 31)
-      </label>
-      <button id="gerar" class="btn" type="submit">Gerar</button>
-      <button id="copiar" class="btn btn-sec" type="button" hidden>Copiar</button>
-    </form>
-    <p class="legenda" id="legenda-gerador"></p>
-    <div id="jogos" class="jogos" aria-live="polite"></div>
-    <p class="legenda aviso">Nenhum filtro aumenta a chance matemática de acerto: todos os jogos válidos têm a mesma probabilidade. Os filtros só restringem quais combinações são elegíveis. Proibido para menores de 18 anos.</p>
-  </section>
 </main>
 
 <footer>
@@ -148,7 +148,7 @@
 </footer>
 
 <noscript><p class="estado erro">Este painel precisa de JavaScript para carregar os dados.</p></noscript>
-<script src="gerador.js?v=20261114"></script>
-<script src="app.js?v=20261114"></script>
+<script src="gerador.js?v=20261115"></script>
+<script src="app.js?v=20261115"></script>
 </body>
 </html>
