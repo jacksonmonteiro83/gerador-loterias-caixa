@@ -159,10 +159,10 @@
       for (const b of $(".toggle").querySelectorAll("button")) {
         b.setAttribute("aria-pressed", b === botao ? "true" : "false");
       }
-      desenharFrequencia(estado.dados);
+      desenharFrequencia(visaoUltimos(estado.dados));
     });
     $("#tabela-freq").addEventListener("toggle", (ev) => {
-      if (ev.target.open) montarTabelaFrequencia(estado.dados);
+      if (ev.target.open) montarTabelaFrequencia(visaoUltimos(estado.dados));
     });
     $("#form-gerador").addEventListener("submit", (ev) => { ev.preventDefault(); gerarJogos(); });
     $("#copiar").addEventListener("click", copiarJogos);
@@ -302,25 +302,33 @@
     renderAvisos(d);
     if (d.vazio) { renderVazio(d); return; }
     renderHero(d);
-    renderVeredito(d);
     renderStats(d);
-    desenharFrequencia(d);
-    desenharSoma(d);
-    desenharRepeticao(d);
-    renderPadroes(d);
+    const v = visaoUltimos(d);
+    desenharFrequencia(v);
+    desenharSoma(v);
+    desenharRepeticao(v);
+    renderPadroes(v);
     renderScore(d);
-    renderAuditoria(d);
     prepararGerador(d);
   }
 
+  /**
+   * Visão dos painéis de frequência, soma, repetição e padrões: só os últimos
+   * concursos (d.ultimos). O atraso continua sendo o atual, medido no histórico completo.
+   */
+  function visaoUltimos(d) {
+    const u = d.ultimos;
+    if (!u) return d;
+    return { ...d, ...u, n: u.n, janela: true };
+  }
+
   function renderVazio(d) {
-    for (const id of ["#ultimo-bolas", "#stats", "#grafico-freq", "#histograma-soma", "#barras-repeticao", "#barras-padroes", "#score-lista", "#tabela-audit", "#tabela-backtest", "#jogos"]) {
+    for (const id of ["#ultimo-bolas", "#stats", "#grafico-freq", "#histograma-soma", "#barras-repeticao", "#barras-padroes", "#score-lista", "#jogos"]) {
       limpar($(id));
     }
     $("#ultimo-numero").textContent = "—";
     $("#ultimo-data").textContent = "sem dados";
-    $("#veredito-texto").textContent = `Ainda não há histórico de ${d.nome}.`;
-    $("#veredito-detalhe").textContent = "";
+    mostrarEstado(`Ainda não há histórico de ${d.nome}.`);
   }
 
   function renderAvisos(d) {
@@ -347,22 +355,6 @@
     $("#ultimo-data").textContent = fmtData(u.d);
     const bolas = limpar($("#ultimo-bolas"));
     for (const v of u.z) bolas.append(el("span", { class: `bola${d.posicional ? " azul" : ""}`, text: rotuloBola(v, d.posicional) }));
-  }
-
-  function renderVeredito(d) {
-    const a = d.auditoria;
-    const texto = $("#veredito-texto");
-    if (!a || !a.n_testes) {
-      texto.textContent = "Histórico curto demais para auditar.";
-      $("#veredito-detalhe").textContent = "";
-      return;
-    }
-    texto.textContent = a.n_q05 === 0
-      ? `Compatível com sorteios aleatórios: nenhum dos ${a.n_testes} testes aponta desvio após a correção para múltiplas comparações.`
-      : `${a.n_q05} de ${a.n_testes} testes indicam desvio após a correção (q < 0,05). Confira a tabela de auditoria e a integridade dos dados.`;
-    $("#veredito-detalhe").textContent =
-      `Sem correção, ${a.n_p05} teste(s) têm p < 0,05; só por acaso esperaríamos ≈ ${dec(a.esperado_p05, 1)}. ` +
-      `Base: ${fmt(d.n)} concursos. Padrões como "dezenas quentes" ou "atrasadas" não resistem a essa régua.`;
   }
 
   function cartao(rotulo, valor, ref) {
@@ -395,7 +387,7 @@
       alvo.append(heatmap(d));
       const r = d.freq_ref;
       legenda.textContent =
-        `Contagem de cada dígito por coluna em ${fmt(d.n)} concursos; esperado ${dec(r.esperado, 1)} por célula. ` +
+        `Últimos ${fmt(d.n)} concursos: contagem de cada dígito por coluna; esperado ${dec(r.esperado, 1)} por célula. ` +
         `Azul = acima, laranja = abaixo (intensidade ∝ |z|); borda = |z| > 1,96. ` +
         `${r.fora_banda} de ${d.sorteadas * (d.max - d.min + 1)} células fora da faixa de 95% (≈ ${dec(r.fora_banda_esperado, 0)} só por acaso).`;
       return;
@@ -414,7 +406,7 @@
       });
       alvo.append(grafico);
       legenda.textContent =
-        `Concursos desde a última aparição. Linha tracejada = média esperada (${dec(ref.media_esperada, 1)}); linha pontilhada = percentil 95 (${ref.p95}). ` +
+        `Atraso atual (concursos desde a última aparição, contado no histórico completo). Linha tracejada = média esperada (${dec(ref.media_esperada, 1)}); linha pontilhada = percentil 95 (${ref.p95}). ` +
         `${ref.acima_p95} de ${d.max - d.min + 1} dezenas estão acima do p95 (≈ ${dec(ref.acima_p95_esperado, 1)} só por acaso). ` +
         `Dezena "atrasada" não é mais provável: a chance de sair é sempre ${d.sorteadas}/${d.max - d.min + 1}.`;
       return;
@@ -425,10 +417,10 @@
       titulos: d.freq.map((f, i) => `${rotulos[i]}: ${f} aparições (esperado ${dec(ref.esperado, 1)})`),
       esperado: ref.esperado, banda: ref.banda,
       fora: (i) => d.freq[i] < ref.banda[0] || d.freq[i] > ref.banda[1],
-      descricao: `Frequência de cada dezena em ${d.n} concursos. Esperado ${dec(ref.esperado, 1)}; faixa de 95%: ${dec(ref.banda[0], 1)} a ${dec(ref.banda[1], 1)}.`,
+      descricao: `Frequência de cada dezena nos últimos ${d.n} concursos. Esperado ${dec(ref.esperado, 1)}; faixa de 95%: ${dec(ref.banda[0], 1)} a ${dec(ref.banda[1], 1)}.`,
     }));
     legenda.textContent =
-      `${fmt(d.n)} concursos · linha tracejada = esperado (${dec(ref.esperado, 1)}) · faixa sombreada = intervalo de 95% ao acaso (${dec(ref.banda[0], 1)}–${dec(ref.banda[1], 1)}). ` +
+      `Últimos ${fmt(d.n)} concursos · linha tracejada = esperado (${dec(ref.esperado, 1)}) · faixa sombreada = intervalo de 95% ao acaso (${dec(ref.banda[0], 1)}–${dec(ref.banda[1], 1)}). ` +
       `${ref.fora_banda} de ${d.max - d.min + 1} dezenas ficam fora (≈ ${dec(ref.fora_banda_esperado, 1)} só por acaso).`;
   }
 
@@ -465,7 +457,7 @@
     limpar($("#histograma-soma")).append(graficoHistograma(s.bins,
       `Distribuição da soma das dezenas: barras observadas, pontos esperados. Média observada ${s.media_obs}, esperada ${s.media_esp}.`));
     $("#legenda-soma").textContent =
-      `Barras = observado; pontos = esperado exato (n × P). Média ${dec(s.media_obs, 1)} (esperada ${dec(s.media_esp, 1)}); ` +
+      `Últimos ${fmt(d.n)} concursos. Barras = observado; pontos = esperado exato (n × P). Média ${dec(s.media_obs, 1)} (esperada ${dec(s.media_esp, 1)}); ` +
       `desvio-padrão ${dec(s.dp_obs, 1)} (esperado ${dec(s.dp_esp, 1)}). Faixas de ${s.bins[0].fim - s.bins[0].ini + 1} unidades.`;
   }
 
@@ -486,8 +478,8 @@
       }));
     });
     $("#legenda-rep").textContent = d.posicional
-      ? `Colunas cujo dígito repete o do concurso anterior. Barra = observado; traço = esperado (binomial, p = 0,1). Média ${dec(r.media_obs, 2)} (esperada ${dec(r.media_esp, 2)}).`
-      : `Dezenas que repetem do concurso anterior. Barra = observado; traço = esperado (hipergeométrica). Média ${dec(r.media_obs, 2)} (esperada ${dec(r.media_esp, 2)}).`;
+      ? `Últimos ${fmt(r.pares)} concursos comparados ao anterior. Colunas cujo dígito repete o do concurso anterior. Barra = observado; traço = esperado (binomial, p = 0,1). Média ${dec(r.media_obs, 2)} (esperada ${dec(r.media_esp, 2)}).`
+      : `Últimos ${fmt(r.pares)} concursos comparados ao anterior. Dezenas que repetem do concurso anterior. Barra = observado; traço = esperado (hipergeométrica). Média ${dec(r.media_obs, 2)} (esperada ${dec(r.media_esp, 2)}).`;
   }
 
   function renderPadroes(d) {
@@ -508,7 +500,7 @@
       }));
     });
     legenda.textContent =
-      `Distribuição das ${d.sorteadas} dezenas pelas ${d.linhas} linhas de ${d.colunas_malha} colunas. Barra = observado; traço = esperado ao acaso. ` +
+      `Últimos ${fmt(d.n)} concursos. Distribuição das ${d.sorteadas} dezenas pelas ${d.linhas} linhas de ${d.colunas_malha} colunas. Barra = observado; traço = esperado ao acaso. ` +
       `Um padrão é frequente porque ocupa mais combinações do espaço, não porque o sorteio o prefira: o top 3 cobre ${pct(d.padroes_top3_observado_pct)} dos concursos ` +
       `contra ${pct(d.padroes_top3_esperado_pct)} esperados.`;
   }
@@ -517,46 +509,25 @@
     const perfil = d.perfil;
     const kpi = limpar($("#score-kpi"));
     const lista = limpar($("#score-lista"));
-    const legenda = $("#legenda-score");
-    if (!perfil) { legenda.textContent = "Sem modelo de score para esta modalidade."; return; }
-    const repNota = d.posicional
-      ? "“rep.” = colunas com o mesmo dígito do concurso anterior. "
-      : "“rep.” = dezenas que também saíram no concurso anterior. ";
+    if (!perfil) return;
     kpi.append(
       el("span", {}, document.createTextNode("limiar "), el("b", { text: String(perfil.limiar) }), document.createTextNode(`/${perfil.maximo}`)),
     );
     if (perfil.fonte !== "nulo") {
       kpi.append(el("span", {}, document.createTextNode("aprovam "), el("b", { text: pct(perfil.aderencia) })));
-      legenda.textContent = repNota +
-        `O score mede tipicidade (quão comum é o jogo entre os sorteios reais), não qualidade nem chance de acerto. ` +
-        `Faixas e limiar foram calibrados nos ${fmt(perfil.amostra)} concursos reais mais recentes; o limiar fica no percentil 65 deles (perto de 35% passam, com variação por empates), ` +
-        `então essa taxa não valida nada (é circular).` +
-        (d.perfil_aposta ? ` Para jogos de ${d.aposta_min} dezenas não há histórico real do mesmo tamanho; o perfil de aposta usa sorteios simulados.` : "");
-      listarScores(d, lista);
-      return;
+    } else {
+      kpi.append(el("span", {}, document.createTextNode("ao acaso "), el("b", { text: pct(perfil.taxa_nominal) })));
     }
-    kpi.append(el("span", {}, document.createTextNode("ao acaso "), el("b", { text: pct(perfil.taxa_nominal) })));
-    let compat = "";
-    if (perfil.aderencia_hist != null && perfil.aderencia_ic) {
-      kpi.append(el("span", {}, document.createTextNode("observado "), el("b", { text: pct(perfil.aderencia_hist) })));
-      const [lo, hi] = perfil.aderencia_ic;
-      const dentro = perfil.taxa_nominal >= lo && perfil.taxa_nominal <= hi;
-      compat = ` Taxa de jogos típicos no histórico: ${pct(perfil.aderencia_hist)} (IC 95%: ${pct(lo)}–${pct(hi)}, n = ${fmt(perfil.amostra_hist)}) — ` +
-        (dentro ? "compatível com a taxa esperada ao acaso." : "fora do intervalo esperado ao acaso; vale checar os dados.");
-    }
-    legenda.textContent = repNota +
-      `O score mede tipicidade (quão comum é o jogo entre sorteios aleatórios), não qualidade nem chance de acerto. ` +
-      `Faixas e limiar vêm de ${fmt(perfil.amostra_nulo)} sorteios simulados sob o acaso, sem ajuste ao histórico.` + compat;
     listarScores(d, lista);
   }
 
   function textoRepetidas(d, c, forma) {
     if (c.r == null) return "—";
     const unidade = d.posicional ? ["coluna", "colunas"] : ["dezena", "dezenas"];
-    const nome = c.r === 1 ? unidade[0] : unidade[1];
+    const plural = c.r === 1 ? 0 : 1;
     return forma === "curto"
-      ? `${c.r} rep.`
-      : `${c.r} ${nome} repetida${c.r === 1 ? "" : "s"} em relação ao concurso anterior`;
+      ? `${c.r} repetida${plural ? "s" : ""}`
+      : `${c.r} ${unidade[plural]} repetida${plural ? "s" : ""} em relação ao concurso anterior`;
   }
 
   function listarScores(d, lista) {
@@ -569,84 +540,6 @@
         el("span", { class: "score-detalhe", text: c.p ? `padrão ${c.p}` : `soma ${c.z.reduce((s, v) => s + v, 0)}` }),
         el("span", { class: "score-status", text: tipico ? "típico" : "atípico" }),
       ));
-    }
-  }
-
-  function tabela(colunas, linhas) {
-    const t = el("table", { class: "tabela" });
-    const cab = el("tr");
-    for (const c of colunas) cab.append(el("th", { scope: "col", text: c }));
-    t.append(el("thead", {}, cab));
-    const corpo = el("tbody");
-    for (const linha of linhas) {
-      const tr = el("tr");
-      linha.forEach((cel, i) => tr.append(el(i === 0 ? "th" : "td", i === 0 ? { scope: "row", text: String(cel) } : { text: String(cel) })));
-      corpo.append(tr);
-    }
-    t.append(corpo);
-    return t;
-  }
-
-  function renderAuditoria(d) {
-    const a = d.auditoria;
-    const alvoTestes = limpar($("#tabela-audit"));
-    if (a && a.testes.length) {
-      alvoTestes.append(tabela(
-        ["Teste", "Estatística", "gl", "p", "q (BH)", "Leitura"],
-        a.testes.map((t) => [
-          t.rotulo,
-          t.estat != null ? dec(t.estat, 2) : t.z != null ? `z = ${dec(t.z, 2)}` : "—",
-          t.gl != null ? String(t.gl) : "—",
-          fmtP(t.p), fmtP(t.q),
-          t.q < 0.05 ? "desvio" : "compatível com o acaso",
-        ]),
-      ));
-      $("#legenda-audit").textContent =
-        `Todos os testes assumem sorteios uniformes e independentes. p sem correção; q = correção de Benjamini–Hochberg para ${a.n_testes} testes ` +
-        `(sem correção, ≈ ${dec(a.esperado_p05, 1)} deles teriam p < 0,05 só por acaso). A uniformidade usa o qui-quadrado correto para sorteio sem reposição.`;
-    } else {
-      $("#legenda-audit").textContent = "Histórico curto demais para auditar.";
-    }
-
-    const bt = d.backtest;
-    const alvoBt = limpar($("#tabela-backtest"));
-    const legBt = $("#legenda-backtest");
-    if (!bt) {
-      legBt.textContent = "Backtest indisponível: são necessários ao menos 31 concursos.";
-    } else {
-      const nomes = { aleatorio: "Aleatório (referência)", padroes_top3: "Só padrões top 3", aprovado: "Só jogos típicos" };
-      const linhas = Object.entries(bt.estrategias).map(([nome, e]) => [
-        nomes[nome] || nome,
-        `${dec(e.media, 3)} ± ${dec(e.erro_padrao, 3)}`,
-        dec(bt.media_teorica, 3),
-        dec(e.z_vs_teorico, 2),
-        e.dif_vs_aleatorio != null ? `${e.dif_vs_aleatorio >= 0 ? "+" : ""}${dec(e.dif_vs_aleatorio, 3)} ± ${dec(e.dif_erro_padrao, 3)}` : "—",
-        e.dif_p != null ? fmtP(e.dif_p) : "—",
-      ]);
-      alvoBt.append(tabela(["Estratégia", "Acertos por jogo", "Esperado", "z", "Δ vs aleatório", "p (Δ)"], linhas));
-      const detectou = Object.values(bt.estrategias).some((e) => e.dif_p != null && e.dif_p < 0.05);
-      legBt.textContent =
-        `${fmt(bt.concursos)} concursos × ${bt.jogos_por_concurso} jogos de ${bt.tamanho_jogo} dezenas, sem olhar o futuro (cada jogo só conhece concursos anteriores). ` +
-        `Todo jogo tem o mesmo nº esperado de acertos (${dec(bt.media_teorica, 3)}). ` +
-        (detectou
-          ? "Há uma diferença com p < 0,05; com poucos testes isso ainda pode ser acaso — repita com mais concursos."
-          : "Nenhuma estratégia difere do acaso (p ≥ 0,05), como a teoria prevê.");
-    }
-
-    const r = d.rateio;
-    const bloco = $("#bloco-rateio");
-    bloco.hidden = !(r && r.disponivel);
-    if (r && r.disponivel) {
-      limpar($("#tabela-rateio")).append(tabela(
-        ["Dezenas ≤ 31 no resultado", "Concursos", "Média de ganhadores (1ª faixa)"],
-        r.grupos.map((g) => [g.dezenas_ate_31, fmt(g.concursos), dec(g.media_ganhadores, 2)]),
-      ));
-      const s = r.spearman;
-      $("#legenda-rateio").textContent =
-        `${fmt(r.n)} concursos com ganhadores informados (esperado ≈ ${dec(r.dezenas_ate_31_esperado, 1)} dezenas ≤ 31). ` +
-        (s ? `Correlação de Spearman = ${dec(s.rho, 3)} (p = ${fmtP(s.p)}). ` : "") +
-        `Se resultados com mais datas tiverem mais ganhadores, evitar combinações de datas aumenta o prêmio esperado de quem acerta, sem mudar a chance de acertar. ` +
-        `Limitação: o volume de apostas (concursos acumulados) não está controlado.`;
     }
   }
 

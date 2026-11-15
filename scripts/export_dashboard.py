@@ -10,7 +10,7 @@ arquivo de uma modalidade não existir, usa o SQLite como alternativa.
 Saída (em ``dashboard/data``):
     index.json          manifesto leve (metadados e tamanho de cada modalidade)
     <modalidade>.json   estatísticas pré-calculadas (frequência, atraso, soma,
-                        repetição, padrões, auditoria, backtest, perfil de score)
+                        repetição, padrões, perfil de score)
 
 Todo o cálculo pesado roda aqui (Python, testado contra scipy); o navegador só
 desenha e gera jogos, e baixa apenas a modalidade selecionada.
@@ -34,9 +34,10 @@ from src.etl.validacao import validar_historico  # noqa: E402
 from src.loterias.registry import get_loteria  # noqa: E402
 from src.utils import db  # noqa: E402
 
-VERSAO_SCHEMA = 3
+VERSAO_SCHEMA = 4
 # modalidades em que o gerador oferece o filtro "repetidas do concurso anterior" (0 ou 1)
 FILTRO_REPETIDAS = {"mega-sena", "quina", "timemania"}
+JANELA_EXIBICAO = 15  # concursos mostrados nos painéis de frequência, soma, repetição e padrões
 JANELA_PADRAO = 500  # concursos recentes usados para calibrar o score (0 = todos)
 
 MODALIDADES: dict[str, dict] = {
@@ -90,7 +91,7 @@ def _carregar_registros(chave: str, caminho_db, diretorio) -> list[dict]:
 
 
 def _modalidade(
-    chave: str, info: dict, registros: list[dict], validacao: dict, backtest: bool,
+    chave: str, info: dict, registros: list[dict], validacao: dict,
     janela: int = JANELA_PADRAO,
 ) -> dict:
     spec = get_loteria(chave).spec
@@ -122,7 +123,7 @@ def _modalidade(
         perfil_aposta = scoring.calibrar(spec, None, qtd=spec.aposta_min)
 
     recentes = []
-    for i in range(max(0, len(registros) - 10), len(registros)):
+    for i in range(max(0, len(registros) - JANELA_EXIBICAO), len(registros)):
         anterior = draws[i - 1] if i > 0 else None
         r = perfil.avaliar(draws[i], anterior)
         if anterior is None:
@@ -143,17 +144,21 @@ def _modalidade(
             }
         )
 
-    teste = auditoria.auditar(spec, resumo)
-    bt = None
-    bt_n = min(300, len(draws) // 3)
-    if backtest and bt_n >= 30:
-        # sem vazamento: o perfil do backtest só vê concursos anteriores à janela testada
-        treino = draws[: len(draws) - bt_n]
-        perfil_bt = perfil_aposta or scoring.calibrar(spec, _df(treino), qtd=k, janela=janela)
-        bt = auditoria.backtest(
-            spec, perfil_bt, draws, top3=resumo.get("padroes_top3"), max_concursos=bt_n
-        )
-    rateio = auditoria.analise_rateio(spec, registros)
+    # painéis de exibição: só os últimos concursos (a repetição usa um a mais,
+    # para que cada um dos últimos 15 seja comparado com o seu antecessor)
+    recorte = auditoria.sem_internos(auditoria.resumir(spec, draws[-JANELA_EXIBICAO:]))
+    recorte_rep = auditoria.sem_internos(auditoria.resumir(spec, draws[-(JANELA_EXIBICAO + 1):]))
+    ultimos = {
+        "n": min(JANELA_EXIBICAO, len(draws)),
+        "primeiro": {"n": registros[-min(JANELA_EXIBICAO, len(draws))]["n"]},
+        "freq_ref": recorte["freq_ref"],
+        "soma": recorte["soma"],
+        "repeticao": recorte_rep["repeticao"],
+        **{c: recorte[c] for c in (
+            "freq", "colunas", "padroes", "padroes_distintos",
+            "padroes_top3_observado_pct", "padroes_top3_esperado_pct",
+        ) if c in recorte},
+    }
 
     saida = {
         **base,
@@ -164,12 +169,12 @@ def _modalidade(
         "primeiro": {"n": registros[0]["n"], "d": registros[0].get("d")},
         "ultimo": {"n": registros[-1]["n"], "d": registros[-1].get("d"), "z": draws[-1]},
         "recentes": recentes,
+        # séries completas só onde o histórico inteiro faz sentido (atraso atual,
+        # tipicidade, padrões top 3 do gerador, resumo geral)
         **auditoria.sem_internos(resumo),
+        "ultimos": ultimos,
         "perfil": perfil.como_dict(),
         "perfil_aposta": perfil_aposta.como_dict() if perfil_aposta else None,
-        "auditoria": teste,
-        "backtest": bt,
-        "rateio": rateio,
     }
     return saida
 
@@ -184,7 +189,6 @@ def exportar(
     caminho_db,
     diretorio_historico,
     destino: str | Path,
-    backtest: bool = True,
     janela: int = JANELA_PADRAO,
 ) -> dict:
     """Lê as modalidades e grava ``index.json`` + um JSON por modalidade."""
@@ -205,7 +209,7 @@ def exportar(
         validacao = validar_historico(spec, registros, sorteadas=info["sorteadas"])
         for erro in validacao["erros"]:
             erros_fatais.append(f"{chave}: {erro}")
-        dados = _modalidade(chave, info, registros, validacao, backtest, janela)
+        dados = _modalidade(chave, info, registros, validacao, janela)
         dados["gerado_em"] = hoje
         arquivo = destino / f"{chave}.json"
         with arquivo.open("w", encoding="utf-8") as fh:
@@ -237,12 +241,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--saida", default=str(RAIZ / "dashboard" / "data"), help="pasta de saída")
     parser.add_argument("--janela", type=int, default=JANELA_PADRAO,
                         help="concursos recentes que calibram o score (0 = todo o histórico)")
-    parser.add_argument("--sem-backtest", action="store_true", help="pula o backtest (mais rápido)")
     args = parser.parse_args(argv)
 
     caminho_db = args.db or db.DEFAULT_DB
     try:
-        indice = exportar(caminho_db, args.historico_dir, args.saida, backtest=not args.sem_backtest, janela=args.janela)
+        indice = exportar(caminho_db, args.historico_dir, args.saida, janela=args.janela)
     except ValueError as exc:
         print(f"ERRO: {exc}", file=sys.stderr)
         return 3

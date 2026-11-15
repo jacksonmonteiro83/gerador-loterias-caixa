@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
 <title>Loterias Caixa — Dashboard</title>
-<meta name="description" content="Estatística descritiva das oito modalidades das Loterias Caixa, com referência teórica (acaso), auditoria de aleatoriedade e gerador de jogos.">
-<link rel="stylesheet" href="styles.css?v=20261115">
+<meta name="description" content="Estatística descritiva das oito modalidades das Loterias Caixa, com referência teórica (acaso) e gerador de jogos.">
+<link rel="stylesheet" href="styles.css?v=20261116">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎲</text></svg>">
 </head>
 <body>
@@ -71,12 +71,6 @@
     <p class="legenda aviso">Nenhum filtro aumenta a chance matemática de acerto: todos os jogos válidos têm a mesma probabilidade. Os filtros só restringem quais combinações são elegíveis. Proibido para menores de 18 anos.</p>
   </section>
 
-  <section class="card veredito" id="card-veredito" aria-labelledby="h-veredito">
-    <h2 id="h-veredito">O que o histórico diz</h2>
-    <p id="veredito-texto" class="veredito-texto">—</p>
-    <p class="legenda" id="veredito-detalhe"></p>
-  </section>
-
   <section class="grid-stats" id="stats" aria-label="Resumo"></section>
 
   <section class="card" aria-labelledby="h-score">
@@ -84,7 +78,6 @@
       <h2 id="h-score">Últimos concursos</h2>
       <div class="score-kpi" id="score-kpi"></div>
     </div>
-    <p class="legenda" id="legenda-score"></p>
     <div class="score-lista" id="score-lista"></div>
   </section>
 
@@ -126,20 +119,6 @@
     <div class="barras-h" id="barras-padroes"></div>
   </section>
 
-
-  <section class="card" aria-labelledby="h-audit">
-    <h2 id="h-audit">Auditoria de aleatoriedade</h2>
-    <p class="legenda" id="legenda-audit"></p>
-    <div class="tabela-scroll" id="tabela-audit"></div>
-    <h3 class="sub-titulo">Backtest: estratégias de geração contra os sorteios reais</h3>
-    <p class="legenda" id="legenda-backtest"></p>
-    <div class="tabela-scroll" id="tabela-backtest"></div>
-    <div id="bloco-rateio" hidden>
-      <h3 class="sub-titulo">Rateio: combinações populares e nº de ganhadores</h3>
-      <p class="legenda" id="legenda-rateio"></p>
-      <div class="tabela-scroll" id="tabela-rateio"></div>
-    </div>
-  </section>
 </main>
 
 <footer>
@@ -148,7 +127,7 @@
 </footer>
 
 <noscript><p class="estado erro">Este painel precisa de JavaScript para carregar os dados.</p></noscript>
-<script src="gerador.js?v=20261115"></script>
-<script src="app.js?v=20261115"></script>
+<script src="gerador.js?v=20261116"></script>
+<script src="app.js?v=20261116"></script>
 </body>
 </html>

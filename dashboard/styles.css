@@ -64,7 +64,6 @@ main[aria-busy="true"] { opacity: .55; transition: opacity .15s; }
 .nota-loteria { margin: -4px 4px 0; }
 
 .banner { margin: 0 0 8px; padding: 10px 12px; border: 1px solid #5a4620; background: rgba(255, 184, 77, .08); border-radius: 10px; color: #ffd9a0; font-size: .88rem; }
-.veredito-texto { margin: 8px 0 0; font-size: 1.05rem; }
 
 .bolas { display: flex; flex-wrap: wrap; gap: 6px; }
 .bola { min-width: 34px; height: 34px; padding: 0 4px; display: inline-grid; place-items: center; border-radius: 999px; background: #1f6f4b; font-weight: 650; font-variant-numeric: tabular-nums; }

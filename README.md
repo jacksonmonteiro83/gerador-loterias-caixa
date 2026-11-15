@@ -257,13 +257,16 @@ de concurso ao descobrir o último publicado.
 
 **https://jacksonmonteiro83.github.io/gerador-loterias-caixa/**
 
-Página estática que mostra, para cada modalidade, **o observado ao lado do que o
-acaso produziria**: frequência e atraso com linha de esperado e faixa de 95%,
-soma (distribuição exata), repetição do concurso anterior (hipergeométrica),
-padrões de linha (multi-hipergeométrica), heatmap por coluna da Super Sete,
-**auditoria de aleatoriedade** (qui-quadrado, runs, autocorrelação, correção de
-Benjamini-Hochberg), **backtest** das estratégias de geração e um gerador de
-jogos. Fica em `dashboard/` e é publicada pelo GitHub Actions.
+Página estática que mostra, para cada modalidade, um gerador de jogos no topo e,
+logo abaixo, **o observado ao lado do que o acaso produziria** nos **últimos 15
+concursos**: frequência (linha de esperado e faixa de 95%), soma (distribuição
+exata), repetição do concurso anterior (hipergeométrica), padrões de linha
+(multi-hipergeométrica) e heatmap por coluna na Super Sete. O atraso é o atual,
+contado no histórico completo. A lista "Últimos concursos" traz, para cada um,
+quantas dezenas repetiram do anterior, o score e o padrão. Fica em `dashboard/` e
+é publicada pelo GitHub Actions. A auditoria de aleatoriedade, o backtest e a
+análise de rateio continuam em `src/core/auditoria.py` (com testes), mas não são
+mais exportados nem exibidos.
 
 Arquitetura:
 
@@ -284,8 +287,7 @@ Arquitetura:
 - **Score = tipicidade**, calibrado nos **concursos reais** mais recentes
   (janela de 500 por padrão; `python scripts/export_dashboard.py --janela N`, `0` =
   todo o histórico). Como o sorteio é aleatório, qualquer janela só descreve o
-  que é comum; a taxa de aprovação nela é circular e não valida nada. O backtest
-  calibra só com concursos anteriores à janela testada (sem vazamento). Para
+  que é comum; a taxa de aprovação nela é circular e não valida nada. Para
   jogos de tamanho diferente do sorteio (Lotomania 50, Timemania 10) não existe
   histórico real do mesmo tamanho, então esse perfil é sintético. A calibração
   por simulação continua disponível (`calibrar(..., fonte="nulo")`).
