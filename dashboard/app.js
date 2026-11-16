@@ -533,12 +533,17 @@
   function listarScores(d, lista) {
     for (const c of [...d.recentes].reverse()) {
       const tipico = Boolean(c.a);
+      const bolas = el("div", { class: "bolas" });
+      for (const v of c.z) bolas.append(el("span", { class: `bola peq${d.posicional ? " azul" : ""}`, text: rotuloBola(v, d.posicional) }));
       lista.append(el("div", { class: "score-linha" },
         el("span", { class: "score-concurso", text: `#${fmt(c.n)}` }),
-        el("span", { class: "score-badge", title: textoRepetidas(d, c, "longo"), text: textoRepetidas(d, c, "curto") }),
-        el("span", { class: `score-badge ${tipico ? "ok" : "neutro"}`, text: `${c.s} pts` }),
-        el("span", { class: "score-detalhe", text: c.p ? `padrão ${c.p}` : `soma ${c.z.reduce((s, v) => s + v, 0)}` }),
-        el("span", { class: "score-status", text: tipico ? "típico" : "atípico" }),
+        bolas,
+        el("div", { class: "score-meta" },
+          el("span", { class: "score-badge", title: textoRepetidas(d, c, "longo"), text: textoRepetidas(d, c, "curto") }),
+          el("span", { class: `score-badge ${tipico ? "ok" : "neutro"}`, text: `${c.s} pts` }),
+          el("span", { class: "score-detalhe", text: c.p ? `padrão ${c.p}` : `soma ${c.z.reduce((s, v) => s + v, 0)}` }),
+          el("span", { class: "score-status", text: tipico ? "típico" : "atípico" }),
+        ),
       ));
     }
   }
