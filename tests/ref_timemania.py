@@ -17,7 +17,8 @@ class TimemaniaScoringSystem:
 
     def __init__(self):
         self.api_url = "https://loteriascaixa-api.herokuapp.com/api/timemania"
-        self.THRESHOLD_10 = 100
+        self.THRESHOLD_10 = 105
+        self.COLUNA_BLOQUEIO = 4  # bloqueia jogos com esta quantidade (ou mais) de dezenas no mesmo final
         self.THRESHOLD_7 = 85
         self.params = {}
 
@@ -50,6 +51,11 @@ class TimemaniaScoringSystem:
         padrao_lista = sorted(freq_decis.values(), reverse=True)
         padrao_formatado = "-".join(map(str, padrao_lista))
 
+        # finais (colunas 0 a 9 = n % 10)
+        freq_colunas = Counter(n % 10 for n in jogo)
+        max_coluna = max(freq_colunas.values()) if freq_colunas else 0
+        colunas_ativas = len(freq_colunas)
+
         # --- HARD BLOCKS (Aposta Múltipla - 10 dezenas) ---
         if rep_anterior >= 2: return {"all": False}
         if primeiro_num >= 22 or ultimo_num < 60 or amplitude < 50: return {"all": False}
@@ -57,6 +63,7 @@ class TimemaniaScoringSystem:
         if max_linha > 4: return {"all": False}
         if quadrantes < 3: return {"all": False}
         if consecutivos >= 3: return {"all": False}
+        if max_coluna >= self.COLUNA_BLOQUEIO: return {"all": False}
 
         score = 0
         if 350 <= soma <= 460: score += 20
@@ -81,6 +88,9 @@ class TimemaniaScoringSystem:
         elif consecutivos == 1: score += 10
         else: score += 5
 
+        if colunas_ativas >= 8: score += 20
+        elif colunas_ativas == 7: score += 10
+
         aprovado = score >= self.THRESHOLD_10
         return {
             "all": aprovado,
@@ -91,6 +101,7 @@ class TimemaniaScoringSystem:
             "quadrantes": quadrantes,
             "consecutivos": consecutivos,
             "rep_anterior": rep_anterior,
+            "colunas_ativas": colunas_ativas,
             "amplitude": f"[{primeiro_num}-{ultimo_num}]",
             "padrao_linhas": padrao_formatado
         }

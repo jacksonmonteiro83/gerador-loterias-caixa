@@ -184,3 +184,40 @@ test("motor Timemania: combina com 'evitar datas' e só vale para a Timemania", 
   assert.equal(G.elegivelMotorTimemania(info, 7), false);
   assert.equal(G.elegivelMotorTimemania(info, 10), true);
 });
+
+test("escolherMelhor: maior score; empate -> menor rep_anterior; depois mais quadrantes", () => {
+  const T = G.motorTimemania;
+  const anterior = [3, 4, 6, 22, 51, 71, 79];
+  // gera candidatos aprovados e confere contra um cálculo independente
+  const info = { min: 1, max: 80, sorteadas: 7, aposta_min: 10, posicional: false, chave: "timemania", padroes_top3: [], perfil: null };
+  for (let rodada = 0; rodada < 50; rodada++) {
+    const cands = [];
+    while (cands.length < 5) {
+      const d = G.amostra(Array.from({ length: 80 }, (_, i) => i + 1), 10).sort((a, b) => a - b);
+      if (T.validarJogo10(d, anterior).all) cands.push(d);
+    }
+    const escolhido = G.escolherMelhor(cands, anterior);
+    const chave = (d) => {
+      const r = T.validarJogo10(d, anterior);
+      return [r.score, -r.rep_anterior, new Set(d.map((n) => T.mapearQuadrante(n))).size];
+    };
+    const melhor = cands.map(chave).sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]).pop();
+    assert.deepEqual(chave(escolhido), melhor);
+  }
+});
+
+test("best-of-5: score médio entregue supera o do primeiro aprovado e todo jogo continua aprovado", () => {
+  const info = { min: 1, max: 80, sorteadas: 7, aposta_min: 10, posicional: false, chave: "timemania", padroes_top3: [], perfil: null };
+  const anterior = [3, 4, 6, 22, 51, 71, 79];
+  const media = (melhorDe) => {
+    const { jogos, esgotou } = G.gerarJogos(info, 600, { estrategia: "timemania", anterior, tamanho: 10, melhorDe });
+    assert.equal(esgotou, false);
+    return jogos.reduce((s, j) => {
+      const r = G.motorTimemania.validarJogo10(j.dezenas, anterior);
+      assert.equal(r.all, true);
+      return s + r.score;
+    }, 0) / jogos.length;
+  };
+  const um = media(1), cinco = media(5);
+  assert.ok(cinco > um + 8, `best-of-5 ${cinco.toFixed(1)} vs primeiro aprovado ${um.toFixed(1)}`);
+});

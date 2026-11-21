@@ -596,8 +596,10 @@
     const chance = G.umEm(d, tamanho);
     $("#legenda-gerador").textContent =
       `Jogo de ${tamanho} dezenas. Chance de acertar todas as dezenas sorteadas: 1 em ${chance.toLocaleString("pt-BR")} — igual para qualquer combinação. ` +
-      `Os filtros usam amostragem com rejeição (uniforme dentro das combinações aceitas); "evitar datas" é só uma heurística de rateio.` +
-      (motorOk ? ` Motor heurístico: só entram jogos que passam nos bloqueios (máx. 1 dezena do concurso anterior, 1ª dezena < 22, última ≥ 60, amplitude ≥ 50, soma entre 320 e 490, no máximo 4 por linha, ≥ 3 quadrantes, no máximo 2 consecutivas) e fazem pelo menos ${G.motorTimemania.THRESHOLD_10} de 140 pontos.` : "") +
+      `Os filtros usam amostragem com rejeição; "evitar datas" é só uma heurística de rateio.` +
+      (motorOk
+        ? ` Motor heurístico: só entram jogos que passam nos bloqueios (máx. 1 dezena do concurso anterior, 1ª dezena < 22, última ≥ 60, amplitude ≥ 50, soma entre 320 e 490, no máximo 4 por linha, ≥ 3 quadrantes, no máximo 2 consecutivas, no máximo ${G.motorTimemania.COLUNA_BLOQUEIO - 1} dezenas com o mesmo final) e fazem pelo menos ${G.motorTimemania.THRESHOLD_10} de ${TimemaniaScoringSystem.SCORE_MAX_10} pontos; cada jogo entregue é o de maior score entre ${G.MELHOR_DE_PADRAO} candidatos aprovados.`
+        : ` Em "Aleatório" e nos filtros, o resultado é uniforme dentro das combinações aceitas.`) +
       (repOk ? ` "Repetidas do anterior" fixa quantas dezenas do jogo também saíram no concurso #${fmt(d.ultimo.n)} (que teve ${d.sorteadas} dezenas); em "Aleatório" não há restrição.` : "");
   }
 
@@ -634,9 +636,9 @@
           linha.append(el("span", { class: "score-badge neutro", text: "reprovado nos bloqueios do motor" }));
         } else {
           linha.append(
-            el("span", { class: "tag", text: `${motor.primos} primos · ${motor.quadrantes} quadrantes · amplitude ${motor.amplitude} · ${motor.consecutivos} consec.` }),
+            el("span", { class: "tag", text: `${motor.primos} primos · ${motor.quadrantes} quadrantes · ${motor.colunas_ativas} finais distintos · amplitude ${motor.amplitude} · ${motor.consecutivos} consec.` }),
             el("span", { class: "score-badge neutro", text: `padrão ${motor.padrao_linhas}` }),
-            el("span", { class: `score-badge ${motor.all ? "ok" : "neutro"}`, text: `${motor.score}/140 · ${motor.all ? "aprovado" : "reprovado"}` }),
+            el("span", { class: `score-badge ${motor.all ? "ok" : "neutro"}`, text: `${motor.score}/${TimemaniaScoringSystem.SCORE_MAX_10} · ${motor.all ? "aprovado" : "reprovado"}` }),
           );
         }
         alvo.append(linha);

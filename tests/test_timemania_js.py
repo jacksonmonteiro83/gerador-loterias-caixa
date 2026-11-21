@@ -23,7 +23,7 @@ def _casos(qtd: int, semente: int) -> list[dict]:
     casos = []
     for i in range(qtd):
         anterior = sorted(rng.sample(range(1, 81), 7))
-        modo = i % 8
+        modo = i % 10
         if modo == 0:    # uniforme
             jogo = rng.sample(range(1, 81), 10)
         elif modo == 1:  # concentrado nas dezenas baixas (barra ultimo < 60 / amplitude)
@@ -49,9 +49,21 @@ def _casos(qtd: int, semente: int) -> list[dict]:
         elif modo == 6:  # soma extrema
             pool = range(1, 31) if rng.random() < 0.5 else range(55, 81)
             jogo = rng.sample(pool, 10)
-        else:            # apenas quadrantes 1 e 2 (metade superior) etc.
+        elif modo == 7:  # apenas quadrantes 1 e 2 (metade superior) etc.
             pool = [n for n in range(1, 81) if (n - 1) // 10 < 4]
             jogo = rng.sample(pool, 10)
+        elif modo == 8:  # poucos finais distintos (3 ou mais dezenas com o mesmo final)
+            finais = rng.sample(range(10), rng.randint(4, 7))
+            pool = [n for n in range(1, 81) if n % 10 in finais]
+            jogo = rng.sample(pool, 10)
+        else:            # finais bem distribuídos (8+ finais distintos) para exercitar o bônus de colunas
+            finais = rng.sample(range(10), rng.randint(8, 10))
+            jogo = [rng.choice([n for n in range(1, 81) if n % 10 == f]) for f in finais]
+            jogo = list(dict.fromkeys(jogo))
+            while len(jogo) < 10:
+                n = rng.randint(1, 80)
+                if n not in jogo:
+                    jogo.append(n)
         casos.append({"jogo": jogo, "anterior": anterior})
     return casos
 
@@ -102,9 +114,12 @@ def test_validar_jogo_10_js_igual_python():
         aprovados += esperado["all"]
         com_score += "score" in esperado
     # a bateria precisa exercitar todos os ramos: bloqueados, reprovados por score e aprovados
-    assert aprovados > 150
+    assert aprovados > 300
     assert com_score - aprovados > 150
     assert len(casos) - com_score > 500
+    # o critério de finais precisa aparecer nos degraus (6, 7, 8+ finais distintos) e no bloqueio (None)
+    finais = {py.validar_jogo_10(c["jogo"], c["anterior"]).get("colunas_ativas") for c in casos}
+    assert {None, 7, 8, 9, 10} <= finais, finais
 
 
 def test_validar_jogo_7_js_igual_python():

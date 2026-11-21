@@ -404,8 +404,11 @@ python scripts/export_dashboard.py
 
 Na Timemania (aposta de 10 dezenas) o gerador usa o `TimemaniaScoringSystem`, portado do Python para
 JavaScript puro em `dashboard/timemania.js`: bloqueios duros (máx. 1 repetida do anterior; 1ª dezena < 22,
-última ≥ 60, amplitude ≥ 50; soma 320–490; máx. 4 por linha; ≥ 3 quadrantes; no máximo 2 consecutivas) e
-score de 0 a 140 com limiar 100. O gerador sorteia jogos uniformes e só aceita os aprovados (amostragem com
-rejeição; ~45% dos jogos aleatórios passam, ~2,2 tentativas por jogo). `validarJogo7` pontua os sorteios
-de 7 dezenas da lista "Últimos concursos" (limiar 85, status APROV/REJ). A paridade com o código Python de
-referência (`tests/ref_timemania.py`) é testada em `tests/test_timemania_js.py`.
+última ≥ 60, amplitude ≥ 50; soma 320–490; máx. 4 por linha; ≥ 3 quadrantes; no máximo 2 consecutivas; no
+máximo 3 dezenas com o mesmo final) e score de 0 a 160 (8 critérios, incluindo a diversidade de finais n % 10)
+com limiar 105. Cerca de 41% dos jogos aleatórios passam. O gerador sorteia jogos uniformes, reúne 5
+candidatos aprovados e entrega o de maior score (desempate: menos repetidas do anterior, mais quadrantes).
+`COLUNA_BLOQUEIO` (4) define a partir de quantas dezenas no mesmo final o jogo é bloqueado; com 3 só passam
+~26% dos jogos aleatórios. `validarJogo7` pontua os sorteios de 7 dezenas da lista "Últimos concursos"
+(limiar 85, status APROV/REJ). A paridade com o código Python de referência (`tests/ref_timemania.py`) é testada
+em `tests/test_timemania_js.py`.

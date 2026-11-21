@@ -19,7 +19,9 @@
 
   class TimemaniaScoringSystem {
     constructor() {
-      this.THRESHOLD_10 = 100;
+      this.THRESHOLD_10 = 105;
+      // jogos com esta quantidade (ou mais) de dezenas no mesmo final (n % 10) são bloqueados
+      this.COLUNA_BLOQUEIO = 4;
       this.THRESHOLD_7 = 85;
       this.params = {};
     }
@@ -68,6 +70,12 @@
 
       const padraoFormatado = contagens.sort((a, b) => b - a).join("-");
 
+      // finais (colunas 0 a 9 = n % 10)
+      const freqColunas = new Map();
+      for (const n of jogo) freqColunas.set(n % 10, (freqColunas.get(n % 10) || 0) + 1);
+      const maxColuna = Math.max(...freqColunas.values());
+      const colunasAtivas = freqColunas.size;
+
       // --- HARD BLOCKS (Aposta Múltipla - 10 dezenas) ---
       if (repAnterior >= 2) return { all: false };
       if (primeiroNum >= 22 || ultimoNum < 60 || amplitude < 50) return { all: false };
@@ -75,6 +83,7 @@
       if (maxLinha > 4) return { all: false };
       if (quadrantes < 3) return { all: false };
       if (consecutivos >= 3) return { all: false };
+      if (maxColuna >= this.COLUNA_BLOQUEIO) return { all: false };
 
       let score = 0;
       if (soma >= 350 && soma <= 460) score += 20;
@@ -99,6 +108,9 @@
       else if (consecutivos === 1) score += 10;
       else score += 5;
 
+      if (colunasAtivas >= 8) score += 20;
+      else if (colunasAtivas === 7) score += 10;
+
       const aprovado = score >= this.THRESHOLD_10;
       return {
         all: aprovado,
@@ -109,6 +121,7 @@
         quadrantes,
         consecutivos,
         rep_anterior: repAnterior,
+        colunas_ativas: colunasAtivas,
         amplitude: `[${primeiroNum}-${ultimoNum}]`,
         padrao_linhas: padraoFormatado,
       };
@@ -194,6 +207,9 @@
       return { all: aprovado, score, status_detalhado: motivo, padrao_linhas: padraoFormatado };
     }
   }
+
+  // pontuação máxima de validarJogo10 (8 critérios; validarJogo7 continua em 140)
+  TimemaniaScoringSystem.SCORE_MAX_10 = 160;
 
   TimemaniaScoringSystem.PRIMOS_TIMEMANIA = new Set([
     2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41,

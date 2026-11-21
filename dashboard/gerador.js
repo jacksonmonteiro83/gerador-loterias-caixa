@@ -201,6 +201,26 @@
   }
 
   const motorTimemania = new TimemaniaScoringSystem();
+  const MELHOR_DE_PADRAO = 5;
+
+  /**
+   * Entre candidatos aprovados do motor, escolhe o de maior score; desempata pela
+   * menor rep_anterior e, depois, pelo maior número de quadrantes (e pela ordem de sorteio).
+   */
+  function escolherMelhor(candidatos, anterior) {
+    let melhor = null;
+    for (const dezenas of candidatos) {
+      const r = motorTimemania.validarJogo10(dezenas, anterior);
+      const cand = { dezenas, r, quadrantes: new Set(dezenas.map((n) => motorTimemania.mapearQuadrante(n))).size };
+      if (
+        !melhor ||
+        r.score > melhor.r.score ||
+        (r.score === melhor.r.score && r.rep_anterior < melhor.r.rep_anterior) ||
+        (r.score === melhor.r.score && r.rep_anterior === melhor.r.rep_anterior && cand.quadrantes > melhor.quadrantes)
+      ) melhor = cand;
+    }
+    return melhor ? melhor.dezenas : null;
+  }
 
   /** Quantas dezenas do jogo saíram no concurso anterior. */
   const repetidasDoAnterior = (dezenas, anterior) => {
@@ -232,6 +252,7 @@
    * Gera um jogo por amostragem com rejeição.
    * opcoes: { estrategia: "aleatorio"|"padroes"|"aprovado"|"timemania", evitarDatas, anterior,
    *           repetidas: "aleatorio"|"0"|"1"|"0-1" (dezenas repetidas do anterior),
+   *           melhorDe (motor Timemania: nº de candidatos aprovados entre os quais se entrega o de maior score; padrão 5),
    *           perfil, tamanho, uint32 }
    * Devolve { dezenas, tentativas, esgotou }.
    */
@@ -247,6 +268,8 @@
     const aceitas =
       elegivelRepetidas(info) && opcoes.anterior ? repetidasAceitas(opcoes.repetidas) : null;
 
+    const quantos = motor ? Math.max(1, opcoes.melhorDe || MELHOR_DE_PADRAO) : 1;
+    const aprovados = [];
     let ultimo = null;
     for (let t = 1; t <= MAX_TENTATIVAS; t++) {
       const dezenas = sorteioAleatorio(info, tamanho, opcoes.uint32);
@@ -255,9 +278,16 @@
       if (evitar && indicePopularidade(dezenas) > teto) continue;
       if (aceitas && !aceitas.includes(repetidasDoAnterior(dezenas, opcoes.anterior))) continue;
       if (usarScore && !pontuarJogo(perfil, dezenas, opcoes.anterior).aprovado) continue;
-      if (motor && !motor.validarJogo10(dezenas, opcoes.anterior).all) continue;
+      if (motor) {
+        if (!motor.validarJogo10(dezenas, opcoes.anterior).all) continue;
+        aprovados.push(dezenas);
+        if (aprovados.length < quantos) continue;
+        return { dezenas: escolherMelhor(aprovados, opcoes.anterior), tentativas: t, esgotou: false };
+      }
       return { dezenas, tentativas: t, esgotou: false };
     }
+    // limite de tentativas: entrega o melhor dos aprovados já reunidos, se houver algum
+    if (aprovados.length) return { dezenas: escolherMelhor(aprovados, opcoes.anterior), tentativas: MAX_TENTATIVAS, esgotou: false };
     return { dezenas: ultimo, tentativas: MAX_TENTATIVAS, esgotou: true };
   }
 
@@ -300,7 +330,7 @@
   return {
     inteiro, amostra, metricasJogo, pontuarJogo, padraoLinhas, quadrantesMalha,
     gerarJogo, gerarJogos, indicePopularidade, limiteDatas, elegivelEvitarDatas,
-    repetidasDoAnterior, repetidasAceitas, elegivelRepetidas, elegivelMotorTimemania, elegivelMotorConcursos, motorTimemania,
+    repetidasDoAnterior, repetidasAceitas, elegivelRepetidas, elegivelMotorTimemania, elegivelMotorConcursos, motorTimemania, escolherMelhor, MELHOR_DE_PADRAO,
     combinacoes, umEm, MAX_TENTATIVAS, LIMITE_DATA,
   };
 });
