@@ -555,11 +555,22 @@
   function prepararGerador(d) {
     const tamanho = d.aposta_min;
     const select = $("#estrategia");
-    const opPadroes = select.querySelector('option[value="padroes"]');
-    const padroesOk = !d.posicional && d.padroes_top3 && d.padroes_top3.length > 0 && tamanho === d.sorteadas;
-    opPadroes.disabled = !padroesOk;
-    if (!padroesOk && select.value === "padroes") select.value = "aleatorio";
-    if (padroesOk && !estado.escolheuMetodo) select.value = "padroes";
+    const motorOk = G.elegivelMotorTimemania(d, tamanho);
+    const habilitar = (valor, ok) => {
+      const op = select.querySelector(`option[value="${valor}"]`);
+      op.disabled = !ok;
+      op.hidden = !ok;
+    };
+    // Timemania usa o motor heurístico no lugar dos métodos baseados no histórico
+    const padroesOk = !motorOk && !d.posicional && d.padroes_top3 && d.padroes_top3.length > 0 && tamanho === d.sorteadas;
+    habilitar("timemania", motorOk);
+    habilitar("padroes", padroesOk);
+    habilitar("aprovado", !motorOk);
+    const atual = select.value;
+    const valido = !select.querySelector(`option[value="${atual}"]`).disabled;
+    if (motorOk && (!estado.escolheuMetodo || !valido)) select.value = "timemania";
+    else if (padroesOk && !estado.escolheuMetodo) select.value = "padroes";
+    else if (!valido) select.value = "aleatorio";
     select.onchange = () => { estado.escolheuMetodo = true; };
     const repOk = G.elegivelRepetidas(d);
     $("#rotulo-repetidas").hidden = !repOk;
@@ -575,6 +586,7 @@
     $("#legenda-gerador").textContent =
       `Jogo de ${tamanho} dezenas. Chance de acertar todas as dezenas sorteadas: 1 em ${chance.toLocaleString("pt-BR")} — igual para qualquer combinação. ` +
       `Os filtros usam amostragem com rejeição (uniforme dentro das combinações aceitas); "evitar datas" é só uma heurística de rateio.` +
+      (motorOk ? ` Motor heurístico: só entram jogos que passam nos bloqueios (máx. 1 dezena do concurso anterior, 1ª dezena < 22, última ≥ 60, amplitude ≥ 50, soma entre 320 e 490, no máximo 4 por linha, ≥ 3 quadrantes, no máximo 2 consecutivas) e fazem pelo menos ${G.motorTimemania.THRESHOLD_10} de 140 pontos.` : "") +
       (repOk ? ` "Repetidas do anterior" fixa quantas dezenas do jogo também saíram no concurso #${fmt(d.ultimo.n)} (que teve ${d.sorteadas} dezenas); em "Aleatório" não há restrição.` : "");
   }
 
@@ -605,6 +617,20 @@
       for (const v of dezenas) bolas.append(el("span", { class: `bola${d.posicional ? " azul" : ""}`, text: rotuloBola(v, d.posicional) }));
       const rep = G.elegivelRepetidas(d) ? ` · ${G.repetidasDoAnterior(dezenas, d.ultimo.z)} rep.` : "";
       linha.append(bolas, el("span", { class: "tag", text: `soma ${soma} · ${pares} par(es)${rep}` }));
+      const motor = G.elegivelMotorTimemania(d, d.aposta_min) ? G.motorTimemania.validarJogo10(dezenas, d.ultimo.z) : null;
+      if (motor) {
+        if (motor.score === undefined) {
+          linha.append(el("span", { class: "score-badge neutro", text: "reprovado nos bloqueios do motor" }));
+        } else {
+          linha.append(
+            el("span", { class: "tag", text: `${motor.primos} primos · ${motor.quadrantes} quadrantes · amplitude ${motor.amplitude} · ${motor.consecutivos} consec.` }),
+            el("span", { class: "score-badge neutro", text: `padrão ${motor.padrao_linhas}` }),
+            el("span", { class: `score-badge ${motor.all ? "ok" : "neutro"}`, text: `${motor.score}/140 · ${motor.all ? "aprovado" : "reprovado"}` }),
+          );
+        }
+        alvo.append(linha);
+        continue;
+      }
       if (!d.posicional) {
         const padrao = G.padraoLinhas(perfil, dezenas);
         const nota = d.aposta_min === d.sorteadas ? (top3.has(padrao) ? " · top 3" : " · fora do top 3") : "";

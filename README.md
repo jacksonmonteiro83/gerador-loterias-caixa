@@ -399,3 +399,11 @@ python scripts/sincronizar_base.py                                  # baixa do G
 python scripts/sincronizar_base.py --origem ../loterias-dashboard/data/raw   # de uma cópia local
 python scripts/export_dashboard.py
 ```
+
+## Motor heurístico da Timemania
+
+Na Timemania (aposta de 10 dezenas) o gerador usa o `TimemaniaScoringSystem`, portado do Python para
+JavaScript puro em `dashboard/timemania.js`: bloqueios duros (repetidas do anterior, extremos e amplitude, soma,
+concentração por linha, quadrantes, consecutivas) e score de 0 a 140 com limiar 105. O gerador sorteia jogos
+uniformes e só aceita os aprovados (amostragem com rejeição, ~2,7 tentativas por jogo). A paridade com o código
+Python de referência (`tests/ref_timemania.py`) é testada em `tests/test_timemania_js.py`.

@@ -152,3 +152,35 @@ test("repetidas na Timemania: jogo de 10 dezenas contra o sorteio de 7", () => {
     }
   }
 });
+
+test("motor Timemania: todo jogo gerado passa nos bloqueios e no limiar (10 dezenas)", () => {
+  const info = { min: 1, max: 80, sorteadas: 7, aposta_min: 10, posicional: false, chave: "timemania", filtro_repetidas: true, padroes_top3: [], perfil: null };
+  const anterior = [3, 4, 6, 22, 51, 71, 79];
+  const motor = G.motorTimemania;
+  for (const repetidas of ["aleatorio", "0", "1"]) {
+    const { jogos, esgotou } = G.gerarJogos(info, 60, { estrategia: "timemania", repetidas, anterior, tamanho: 10 });
+    assert.equal(esgotou, false);
+    for (const { dezenas } of jogos) {
+      const r = motor.validarJogo10(dezenas, anterior);
+      assert.equal(r.all, true, dezenas.join(","));
+      assert.ok(r.score >= motor.THRESHOLD_10);
+      assert.ok(r.rep_anterior <= 1);
+      if (repetidas !== "aleatorio") assert.equal(r.rep_anterior, Number(repetidas));
+    }
+  }
+});
+
+test("motor Timemania: combina com 'evitar datas' e só vale para a Timemania", () => {
+  const info = { min: 1, max: 80, sorteadas: 7, aposta_min: 10, posicional: false, chave: "timemania", filtro_repetidas: true, padroes_top3: [], perfil: null };
+  const anterior = [3, 4, 6, 22, 51, 71, 79];
+  const { jogos, esgotou } = G.gerarJogos(info, 30, { estrategia: "timemania", evitarDatas: true, anterior, tamanho: 10 });
+  assert.equal(esgotou, false);
+  const teto = G.limiteDatas(info, 10);
+  for (const { dezenas } of jogos) {
+    assert.ok(G.indicePopularidade(dezenas) <= teto);
+    assert.equal(G.motorTimemania.validarJogo10(dezenas, anterior).all, true);
+  }
+  assert.equal(G.elegivelMotorTimemania({ ...info, chave: "mega-sena" }, 10), false);
+  assert.equal(G.elegivelMotorTimemania(info, 7), false);
+  assert.equal(G.elegivelMotorTimemania(info, 10), true);
+});

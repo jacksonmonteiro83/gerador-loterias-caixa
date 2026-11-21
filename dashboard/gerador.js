@@ -9,9 +9,9 @@
  *   combinações elegíveis.
  */
 (function (raiz, fabrica) {
-  if (typeof module === "object" && module.exports) module.exports = fabrica();
-  else raiz.Gerador = fabrica();
-})(typeof self !== "undefined" ? self : this, function () {
+  if (typeof module === "object" && module.exports) module.exports = fabrica(require("./timemania.js"));
+  else raiz.Gerador = fabrica(raiz.TimemaniaScoringSystem);
+})(typeof self !== "undefined" ? self : this, function (TimemaniaScoringSystem) {
   "use strict";
 
   const LIMITE_DATA = 31;
@@ -200,6 +200,8 @@
     return Math.floor((tamanho * LIMITE_DATA) / universo);
   }
 
+  const motorTimemania = new TimemaniaScoringSystem();
+
   /** Quantas dezenas do jogo saíram no concurso anterior. */
   const repetidasDoAnterior = (dezenas, anterior) => {
     const ant = new Set(anterior || []);
@@ -216,11 +218,16 @@
 
   const elegivelRepetidas = (info) => Boolean(info.filtro_repetidas) && !info.posicional;
 
+  /** Motor heurístico (bloqueios + score) disponível só para a Timemania, em apostas de 10 dezenas. */
+  const TAMANHO_MOTOR_TIMEMANIA = 10;
+  const elegivelMotorTimemania = (info, tamanho) =>
+    info.chave === "timemania" && (tamanho || info.aposta_min) === TAMANHO_MOTOR_TIMEMANIA;
+
   const elegivelEvitarDatas = (info) => !info.posicional && info.max - info.min + 1 > LIMITE_DATA;
 
   /**
    * Gera um jogo por amostragem com rejeição.
-   * opcoes: { estrategia: "aleatorio"|"padroes"|"aprovado", evitarDatas, anterior,
+   * opcoes: { estrategia: "aleatorio"|"padroes"|"aprovado"|"timemania", evitarDatas, anterior,
    *           repetidas: "aleatorio"|"0"|"1"|"0-1" (dezenas repetidas do anterior),
    *           perfil, tamanho, uint32 }
    * Devolve { dezenas, tentativas, esgotou }.
@@ -231,6 +238,7 @@
     const top3 = new Set(info.padroes_top3 || []);
     const usarPadroes = opcoes.estrategia === "padroes" && !info.posicional && top3.size > 0 && tamanho === info.sorteadas;
     const usarScore = opcoes.estrategia === "aprovado" && perfil;
+    const motor = opcoes.estrategia === "timemania" && elegivelMotorTimemania(info, tamanho) ? motorTimemania : null;
     const evitar = Boolean(opcoes.evitarDatas) && elegivelEvitarDatas(info);
     const teto = evitar ? limiteDatas(info, tamanho) : Infinity;
     const aceitas =
@@ -244,6 +252,7 @@
       if (evitar && indicePopularidade(dezenas) > teto) continue;
       if (aceitas && !aceitas.includes(repetidasDoAnterior(dezenas, opcoes.anterior))) continue;
       if (usarScore && !pontuarJogo(perfil, dezenas, opcoes.anterior).aprovado) continue;
+      if (motor && !motor.validarJogo10(dezenas, opcoes.anterior).all) continue;
       return { dezenas, tentativas: t, esgotou: false };
     }
     return { dezenas: ultimo, tentativas: MAX_TENTATIVAS, esgotou: true };
@@ -288,7 +297,7 @@
   return {
     inteiro, amostra, metricasJogo, pontuarJogo, padraoLinhas, quadrantesMalha,
     gerarJogo, gerarJogos, indicePopularidade, limiteDatas, elegivelEvitarDatas,
-    repetidasDoAnterior, repetidasAceitas, elegivelRepetidas,
+    repetidasDoAnterior, repetidasAceitas, elegivelRepetidas, elegivelMotorTimemania, motorTimemania,
     combinacoes, umEm, MAX_TENTATIVAS, LIMITE_DATA,
   };
 });
