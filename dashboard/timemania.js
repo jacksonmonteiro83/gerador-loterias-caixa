@@ -19,7 +19,7 @@
 
   class TimemaniaScoringSystem {
     constructor() {
-      this.THRESHOLD_10 = 120;
+      this.THRESHOLD_10 = 100;
       this.THRESHOLD_7 = 85;
       this.params = {};
     }
@@ -70,11 +70,11 @@
 
       // --- HARD BLOCKS (Aposta Múltipla - 10 dezenas) ---
       if (repAnterior >= 2) return { all: false };
-      if (primeiroNum > 16 || ultimoNum < 64 || amplitude < 55) return { all: false };
+      if (primeiroNum >= 22 || ultimoNum < 60 || amplitude < 50) return { all: false };
       if (soma < 320 || soma > 490) return { all: false };
-      if (maxLinha > 3) return { all: false };
+      if (maxLinha > 4) return { all: false };
       if (quadrantes < 3) return { all: false };
-      if (consecutivos >= 2) return { all: false };
+      if (consecutivos >= 3) return { all: false };
 
       let score = 0;
       if (soma >= 350 && soma <= 460) score += 20;

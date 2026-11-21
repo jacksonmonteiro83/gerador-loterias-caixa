@@ -17,7 +17,7 @@ class TimemaniaScoringSystem:
 
     def __init__(self):
         self.api_url = "https://loteriascaixa-api.herokuapp.com/api/timemania"
-        self.THRESHOLD_10 = 120
+        self.THRESHOLD_10 = 100
         self.THRESHOLD_7 = 85
         self.params = {}
 
@@ -52,11 +52,11 @@ class TimemaniaScoringSystem:
 
         # --- HARD BLOCKS (Aposta Múltipla - 10 dezenas) ---
         if rep_anterior >= 2: return {"all": False}
-        if primeiro_num > 16 or ultimo_num < 64 or amplitude < 55: return {"all": False}
+        if primeiro_num >= 22 or ultimo_num < 60 or amplitude < 50: return {"all": False}
         if soma < 320 or soma > 490: return {"all": False}
-        if max_linha > 3: return {"all": False}
+        if max_linha > 4: return {"all": False}
         if quadrantes < 3: return {"all": False}
-        if consecutivos >= 2: return {"all": False}
+        if consecutivos >= 3: return {"all": False}
 
         score = 0
         if 350 <= soma <= 460: score += 20

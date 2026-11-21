@@ -597,7 +597,7 @@
     $("#legenda-gerador").textContent =
       `Jogo de ${tamanho} dezenas. Chance de acertar todas as dezenas sorteadas: 1 em ${chance.toLocaleString("pt-BR")} — igual para qualquer combinação. ` +
       `Os filtros usam amostragem com rejeição (uniforme dentro das combinações aceitas); "evitar datas" é só uma heurística de rateio.` +
-      (motorOk ? ` Motor heurístico: só entram jogos que passam nos bloqueios (máx. 1 dezena do concurso anterior, 1ª dezena ≤ 16, última ≥ 64, amplitude ≥ 55, soma entre 320 e 490, no máximo 3 por linha, ≥ 3 quadrantes, no máximo 1 par de dezenas consecutivas) e fazem pelo menos ${G.motorTimemania.THRESHOLD_10} de 140 pontos.` : "") +
+      (motorOk ? ` Motor heurístico: só entram jogos que passam nos bloqueios (máx. 1 dezena do concurso anterior, 1ª dezena < 22, última ≥ 60, amplitude ≥ 50, soma entre 320 e 490, no máximo 4 por linha, ≥ 3 quadrantes, no máximo 2 consecutivas) e fazem pelo menos ${G.motorTimemania.THRESHOLD_10} de 140 pontos.` : "") +
       (repOk ? ` "Repetidas do anterior" fixa quantas dezenas do jogo também saíram no concurso #${fmt(d.ultimo.n)} (que teve ${d.sorteadas} dezenas); em "Aleatório" não há restrição.` : "");
   }
 
