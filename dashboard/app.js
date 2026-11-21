@@ -510,6 +510,15 @@
     const kpi = limpar($("#score-kpi"));
     const lista = limpar($("#score-lista"));
     if (!perfil) return;
+    if (G.elegivelMotorConcursos(d)) {
+      const aprov = d.recentes.filter((c) => c.z.length === 7 && G.motorTimemania.validarJogo7(c.z, c.za || []).all).length;
+      kpi.append(
+        el("span", {}, document.createTextNode("limiar "), el("b", { text: String(G.motorTimemania.THRESHOLD_7) }), document.createTextNode("/140")),
+        el("span", {}, document.createTextNode("APROV "), el("b", { text: `${aprov} de ${d.recentes.length}` })),
+      );
+      listarScores(d, lista);
+      return;
+    }
     kpi.append(
       el("span", {}, document.createTextNode("limiar "), el("b", { text: String(perfil.limiar) }), document.createTextNode(`/${perfil.maximo}`)),
     );
@@ -532,7 +541,8 @@
 
   function listarScores(d, lista) {
     for (const c of [...d.recentes].reverse()) {
-      const tipico = Boolean(c.a);
+      const motor = G.elegivelMotorConcursos(d) && c.z.length === 7 ? G.motorTimemania.validarJogo7(c.z, c.za || []) : null;
+      const tipico = motor ? motor.all : Boolean(c.a);
       const bolas = el("div", { class: "bolas" });
       for (const v of c.z) bolas.append(el("span", { class: `bola peq${d.posicional ? " azul" : ""}`, text: rotuloBola(v, d.posicional) }));
       lista.append(el("div", { class: "score-linha" },
@@ -540,9 +550,9 @@
         bolas,
         el("div", { class: "score-meta" },
           el("span", { class: "score-badge", title: textoRepetidas(d, c, "longo"), text: textoRepetidas(d, c, "curto") }),
-          el("span", { class: `score-badge ${tipico ? "ok" : "neutro"}`, text: `${c.s} pts` }),
+          el("span", { class: `score-badge ${tipico ? "ok" : "neutro"}`, title: motor ? motor.status_detalhado : undefined, text: `${motor ? motor.score : c.s} pts` }),
           el("span", { class: "score-detalhe", text: c.p ? `padrão ${c.p}` : `soma ${c.z.reduce((s, v) => s + v, 0)}` }),
-          el("span", { class: "score-status", text: tipico ? "típico" : "atípico" }),
+          el("span", { class: "score-status", title: motor ? motor.status_detalhado : undefined, text: motor ? (motor.all ? "APROV" : "REJ") : (tipico ? "típico" : "atípico") }),
         ),
       ));
     }
@@ -564,6 +574,7 @@
     // Timemania usa o motor heurístico no lugar dos métodos baseados no histórico
     const padroesOk = !motorOk && !d.posicional && d.padroes_top3 && d.padroes_top3.length > 0 && tamanho === d.sorteadas;
     habilitar("timemania", motorOk);
+    select.querySelector('option[value="timemania"]').textContent = `Motor heurístico (score ≥ ${G.motorTimemania.THRESHOLD_10})`;
     habilitar("padroes", padroesOk);
     habilitar("aprovado", !motorOk);
     const atual = select.value;
@@ -586,7 +597,7 @@
     $("#legenda-gerador").textContent =
       `Jogo de ${tamanho} dezenas. Chance de acertar todas as dezenas sorteadas: 1 em ${chance.toLocaleString("pt-BR")} — igual para qualquer combinação. ` +
       `Os filtros usam amostragem com rejeição (uniforme dentro das combinações aceitas); "evitar datas" é só uma heurística de rateio.` +
-      (motorOk ? ` Motor heurístico: só entram jogos que passam nos bloqueios (máx. 1 dezena do concurso anterior, 1ª dezena < 22, última ≥ 60, amplitude ≥ 50, soma entre 320 e 490, no máximo 4 por linha, ≥ 3 quadrantes, no máximo 2 consecutivas) e fazem pelo menos ${G.motorTimemania.THRESHOLD_10} de 140 pontos.` : "") +
+      (motorOk ? ` Motor heurístico: só entram jogos que passam nos bloqueios (máx. 1 dezena do concurso anterior, 1ª dezena ≤ 16, última ≥ 64, amplitude ≥ 55, soma entre 320 e 490, no máximo 3 por linha, ≥ 3 quadrantes, no máximo 1 par de dezenas consecutivas) e fazem pelo menos ${G.motorTimemania.THRESHOLD_10} de 140 pontos.` : "") +
       (repOk ? ` "Repetidas do anterior" fixa quantas dezenas do jogo também saíram no concurso #${fmt(d.ultimo.n)} (que teve ${d.sorteadas} dezenas); em "Aleatório" não há restrição.` : "");
   }
 

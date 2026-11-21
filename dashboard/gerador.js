@@ -223,6 +223,9 @@
   const elegivelMotorTimemania = (info, tamanho) =>
     info.chave === "timemania" && (tamanho || info.aposta_min) === TAMANHO_MOTOR_TIMEMANIA;
 
+  /** Lista de últimos concursos pontuada pelo motor (sorteios de 7 dezenas da Timemania). */
+  const elegivelMotorConcursos = (info) => info.chave === "timemania" && info.sorteadas === 7;
+
   const elegivelEvitarDatas = (info) => !info.posicional && info.max - info.min + 1 > LIMITE_DATA;
 
   /**
@@ -297,7 +300,7 @@
   return {
     inteiro, amostra, metricasJogo, pontuarJogo, padraoLinhas, quadrantesMalha,
     gerarJogo, gerarJogos, indicePopularidade, limiteDatas, elegivelEvitarDatas,
-    repetidasDoAnterior, repetidasAceitas, elegivelRepetidas, elegivelMotorTimemania, motorTimemania,
+    repetidasDoAnterior, repetidasAceitas, elegivelRepetidas, elegivelMotorTimemania, elegivelMotorConcursos, motorTimemania,
     combinacoes, umEm, MAX_TENTATIVAS, LIMITE_DATA,
   };
 });

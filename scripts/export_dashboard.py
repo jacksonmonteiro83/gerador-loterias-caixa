@@ -141,6 +141,7 @@ def _modalidade(
                 "a": 1 if r["aprovado"] else 0,
                 "p": scoring.padrao_linhas(draws[i], spec),
                 "r": repetidas,
+                "za": anterior,
             }
         )
 

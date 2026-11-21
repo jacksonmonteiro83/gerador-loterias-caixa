@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="dark">
 <title>Loterias Caixa — Dashboard</title>
 <meta name="description" content="Estatística descritiva das oito modalidades das Loterias Caixa, com referência teórica (acaso) e gerador de jogos.">
-<link rel="stylesheet" href="styles.css?v=20261121">
+<link rel="stylesheet" href="styles.css?v=20261122">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎲</text></svg>">
 </head>
 <body>
@@ -48,7 +48,7 @@
       <input id="qtd" name="qtd" type="number" min="1" max="20" value="5" inputmode="numeric">
       <label for="estrategia">Método</label>
       <select id="estrategia" name="estrategia">
-        <option value="timemania" hidden disabled>Motor heurístico Timemania (score ≥ 105)</option>
+        <option value="timemania" hidden disabled>Motor heurístico (score ≥ 120)</option>
         <option value="aleatorio">Aleatório (uniforme)</option>
         <option value="padroes" selected>Só padrões de linha top 3</option>
         <option value="aprovado">Só jogos típicos (score ≥ limiar)</option>
@@ -128,8 +128,8 @@
 </footer>
 
 <noscript><p class="estado erro">Este painel precisa de JavaScript para carregar os dados.</p></noscript>
-<script src="timemania.js?v=20261121"></script>
-<script src="gerador.js?v=20261121"></script>
-<script src="app.js?v=20261121"></script>
+<script src="timemania.js?v=20261122"></script>
+<script src="gerador.js?v=20261122"></script>
+<script src="app.js?v=20261122"></script>
 </body>
 </html>

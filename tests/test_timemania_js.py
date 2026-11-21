@@ -65,6 +65,31 @@ def _rodar_js(casos):
     return json.loads(r.stdout)
 
 
+def _casos7(qtd: int, semente: int) -> list[dict]:
+    """Sorteios/jogos de 7 dezenas: uniformes, com repetição forçada e com sequências."""
+    rng = random.Random(semente)
+    casos = []
+    for i in range(qtd):
+        anterior = sorted(rng.sample(range(1, 81), 7))
+        modo = i % 4
+        if modo == 0:
+            jogo = rng.sample(range(1, 81), 7)
+        elif modo == 1:  # repetição forçada
+            k = rng.randint(0, 3)
+            resto = [n for n in range(1, 81) if n not in anterior]
+            jogo = rng.sample(anterior, k) + rng.sample(resto, 7 - k)
+        elif modo == 2:  # sequências
+            ini = rng.randrange(1, 70)
+            base = list(range(ini, ini + rng.randint(2, 4)))
+            resto = [n for n in range(1, 81) if n not in base]
+            jogo = base + rng.sample(resto, 7 - len(base))
+        else:            # espalhados em dezenas diferentes (um por linha)
+            decis = rng.sample(range(8), 7)
+            jogo = [d * 10 + rng.randint(1, 10) for d in decis]
+        casos.append({"jogo": jogo, "anterior": anterior})
+    return casos
+
+
 def test_validar_jogo_10_js_igual_python():
     py = TimemaniaScoringSystem()
     casos = _casos(8000, semente=20261121)
@@ -77,9 +102,26 @@ def test_validar_jogo_10_js_igual_python():
         aprovados += esperado["all"]
         com_score += "score" in esperado
     # a bateria precisa exercitar todos os ramos: bloqueados, reprovados por score e aprovados
-    assert aprovados > 500
-    assert com_score - aprovados > 200
+    assert aprovados > 150
+    assert com_score - aprovados > 150
     assert len(casos) - com_score > 500
+
+
+def test_validar_jogo_7_js_igual_python():
+    py = TimemaniaScoringSystem()
+    casos = _casos7(20000, semente=20261122)
+    saida = _rodar_js(casos)
+    ramos = set()
+    for caso, js in zip(casos, saida):
+        esperado = py.validar_jogo_7(caso["jogo"], caso["anterior"])
+        assert js == esperado, (caso, js, esperado)
+        det = esperado["status_detalhado"]
+        ramos.add(det.split("(0pts: ")[1].split("(")[0].split("[")[0].rstrip(")") if "(0pts:" in det
+                  else ("APROV" if esperado["all"] else "REJ_SCORE"))
+    assert ramos >= {
+        "REP_ANT", "EXTREMOS", "SOMA", "ELIMINADO_LINHA", "ELIMINADO_ESPALHAMENTO_TOTAL",
+        "QUADRANTES", "CONSECUTIVOS", "APROV", "REJ_SCORE",
+    }, ramos
 
 
 def test_dezenas_fora_de_ordem_e_tamanho_invalido():
@@ -87,8 +129,11 @@ def test_dezenas_fora_de_ordem_e_tamanho_invalido():
     jogo = [78, 5, 52, 12, 66, 19, 41, 60, 33, 71]
     anterior = [3, 4, 6, 22, 51, 71, 79]
     assert _rodar_js([{"jogo": jogo, "anterior": anterior}])[0] == py.validar_jogo_10(jogo, anterior)
-    script = (
-        "const T=require('./dashboard/timemania.js');"
-        "try{new T().validarJogo10([1,2,3],[1]);process.exit(1)}catch(e){process.exit(e instanceof RangeError?0:2)}"
-    )
-    assert subprocess.run([NODE, "-e", script], cwd=RAIZ).returncode == 0
+    j7 = [71, 5, 52, 12, 66, 19, 41]
+    assert _rodar_js([{"jogo": j7, "anterior": anterior}])[0] == py.validar_jogo_7(j7, anterior)
+    for metodo in ("validarJogo10", "validarJogo7"):
+        script = (
+            "const T=require('./dashboard/timemania.js');"
+            f"try{{new T().{metodo}([1,2,3],[1]);process.exit(1)}}catch(e){{process.exit(e instanceof RangeError?0:2)}}"
+        )
+        assert subprocess.run([NODE, "-e", script], cwd=RAIZ).returncode == 0
